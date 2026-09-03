@@ -1,0 +1,30 @@
+{
+  "name": "veilpool-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "generate:abis": "node ../scripts/generate-frontend-abis.mjs",
+    "test": "node --experimental-strip-types --test tests/appLogic.test.ts tests/depositRecovery.test.ts tests/evmAddress.test.ts tests/fheInputBinding.test.ts tests/fheSdkInitialization.test.ts tests/landingScale.test.ts tests/operatorLogic.test.ts tests/roundMonitor.test.ts tests/testTokenFaucet.test.ts tests/underlyingBalance.test.ts tests/wallet.test.ts",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@zama-fhe/relayer-sdk": "^0.4.4",
+    "animejs": "4.5.0",
+    "ethers": "^6.17.0",
+    "lucide-react": "1.38.0",
+    "motion": "13.1.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  }
+}

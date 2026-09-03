@@ -1,0 +1,94 @@
+{
+  "status": "complete",
+  "network": "sepolia",
+  "chainId": 11155111,
+  "deployer": "0x51133dfa694940Fe4ebC785a5CE11B54f5C86048",
+  "operator": "0x51133dfa694940Fe4ebC785a5CE11B54f5C86048",
+  "yieldSource": "Controlled Sepolia ERC-4626 yield simulation",
+  "testAssetsOnly": true,
+  "contracts": {
+    "underlyingToken": {
+      "address": "0x60FAC1d70af4e4b6f7eF973787bddd37763508bc",
+      "deploymentTxHash": "0xc6465f290fbe55a0b65a9e9911dc07aa38560a1bc619d1badba28033a87da48d",
+      "deploymentBlock": 11614342
+    },
+    "confidentialToken": {
+      "address": "0xfbC3096644cc41bAa6768897c0de286F79D1578a",
+      "deploymentTxHash": "0xb05cc451e023c4ee8b1149b4d4d3ca2d1551ba09d6748ba759a09aa9a4d0735f",
+      "deploymentBlock": 11614344
+    },
+    "veilPool": {
+      "address": "0x6E308F5F33abbdd800883e297906dF8de6B68Bd5",
+      "deploymentTxHash": "0x5077594a39cce215be8ea747be65c798c2f2b772f75e3a1ce096c59aac6c7de5",
+      "deploymentBlock": 11614345
+    },
+    "sepoliaYieldVault": {
+      "address": "0xecF8Abb70E79aF0E9428388b66F8498b474040b1",
+      "deploymentTxHash": "0x6ee7460128c2058c930b3c2c444da19667c2e6919dbab53a0406732d30b4c738",
+      "deploymentBlock": 11614346
+    },
+    "yieldAdapter": {
+      "address": "0xef20dc27219531e8fbbfcb932EE8d8ad04eA3fe8",
+      "deploymentTxHash": "0xf6819e8f609d39e2051fa00181c28354f703fe7b52f874b02ea0add5e833ba60",
+      "deploymentBlock": 11614347
+    },
+    "prizeEngine": {
+      "address": "0xaA6899418e85a1D6302B7C92aD760A9165aB358E",
+      "deploymentTxHash": "0x22cd9124db5f18b2c4cb2f50001c76199123ffe654a923c4573d7b0907a6bc23",
+      "deploymentBlock": 11614349
+    }
+  },
+  "transactions": {
+    "underlyingToken": "0xc6465f290fbe55a0b65a9e9911dc07aa38560a1bc619d1badba28033a87da48d",
+    "confidentialToken": "0xb05cc451e023c4ee8b1149b4d4d3ca2d1551ba09d6748ba759a09aa9a4d0735f",
+    "veilPool": "0x5077594a39cce215be8ea747be65c798c2f2b772f75e3a1ce096c59aac6c7de5",
+    "sepoliaYieldVault": "0x6ee7460128c2058c930b3c2c444da19667c2e6919dbab53a0406732d30b4c738",
+    "yieldAdapter": "0xf6819e8f609d39e2051fa00181c28354f703fe7b52f874b02ea0add5e833ba60",
+    "prizeEngine": "0x22cd9124db5f18b2c4cb2f50001c76199123ffe654a923c4573d7b0907a6bc23",
+    "setPrizeEngine": "0x0e1126d469108219543d755bdd5cd15cd1b2025a5c6c16427c1f21c7dde42a46",
+    "setAdapterController": "0xd7c4842dbfe23ae78bca231940b3db66fe56e74b897f56be8ca6a5e9759e037b",
+    "setYieldAdapter": "0xa88036fa6a4658d840f2e58768cfec3c54fa2703eba81718b02a0a3ed23c6d02"
+  },
+  "blocks": {
+    "underlyingToken": 11614342,
+    "confidentialToken": 11614344,
+    "veilPool": 11614345,
+    "sepoliaYieldVault": 11614346,
+    "yieldAdapter": 11614347,
+    "prizeEngine": 11614349,
+    "setPrizeEngine": 11614350,
+    "setAdapterController": 11614351,
+    "setYieldAdapter": 11614352
+  },
+  "frontendEnv": {
+    "VITE_CHAIN_ID": "11155111",
+    "VITE_VEILPOOL_ADDRESS": "0x6E308F5F33abbdd800883e297906dF8de6B68Bd5",
+    "VITE_CONFIDENTIAL_TOKEN_ADDRESS": "0xfbC3096644cc41bAa6768897c0de286F79D1578a",
+    "VITE_UNDERLYING_TOKEN_ADDRESS": "0x60FAC1d70af4e4b6f7eF973787bddd37763508bc",
+    "VITE_PRIZE_ENGINE_ADDRESS": "0xaA6899418e85a1D6302B7C92aD760A9165aB358E",
+    "VITE_YIELD_ADAPTER_ADDRESS": "0xef20dc27219531e8fbbfcb932EE8d8ad04eA3fe8",
+    "VITE_OPERATOR_ADDRESS": "0x51133dfa694940Fe4ebC785a5CE11B54f5C86048"
+  },
+  "explorer": {
+    "contracts": {
+      "underlyingToken": "https://sepolia.etherscan.io/address/0x60FAC1d70af4e4b6f7eF973787bddd37763508bc",
+      "confidentialToken": "https://sepolia.etherscan.io/address/0xfbC3096644cc41bAa6768897c0de286F79D1578a",
+      "veilPool": "https://sepolia.etherscan.io/address/0x6E308F5F33abbdd800883e297906dF8de6B68Bd5",
+      "sepoliaYieldVault": "https://sepolia.etherscan.io/address/0xecF8Abb70E79aF0E9428388b66F8498b474040b1",
+      "yieldAdapter": "https://sepolia.etherscan.io/address/0xef20dc27219531e8fbbfcb932EE8d8ad04eA3fe8",
+      "prizeEngine": "https://sepolia.etherscan.io/address/0xaA6899418e85a1D6302B7C92aD760A9165aB358E"
+    },
+    "transactions": {
+      "underlyingToken": "https://sepolia.etherscan.io/tx/0xc6465f290fbe55a0b65a9e9911dc07aa38560a1bc619d1badba28033a87da48d",
+      "confidentialToken": "https://sepolia.etherscan.io/tx/0xb05cc451e023c4ee8b1149b4d4d3ca2d1551ba09d6748ba759a09aa9a4d0735f",
+      "veilPool": "https://sepolia.etherscan.io/tx/0x5077594a39cce215be8ea747be65c798c2f2b772f75e3a1ce096c59aac6c7de5",
+      "sepoliaYieldVault": "https://sepolia.etherscan.io/tx/0x6ee7460128c2058c930b3c2c444da19667c2e6919dbab53a0406732d30b4c738",
+      "yieldAdapter": "https://sepolia.etherscan.io/tx/0xf6819e8f609d39e2051fa00181c28354f703fe7b52f874b02ea0add5e833ba60",
+      "prizeEngine": "https://sepolia.etherscan.io/tx/0x22cd9124db5f18b2c4cb2f50001c76199123ffe654a923c4573d7b0907a6bc23",
+      "setPrizeEngine": "https://sepolia.etherscan.io/tx/0x0e1126d469108219543d755bdd5cd15cd1b2025a5c6c16427c1f21c7dde42a46",
+      "setAdapterController": "https://sepolia.etherscan.io/tx/0xd7c4842dbfe23ae78bca231940b3db66fe56e74b897f56be8ca6a5e9759e037b",
+      "setYieldAdapter": "https://sepolia.etherscan.io/tx/0xa88036fa6a4658d840f2e58768cfec3c54fa2703eba81718b02a0a3ed23c6d02"
+    }
+  },
+  "timestamp": "2026-09-01T18:28:09.063Z"
+}
