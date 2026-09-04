@@ -60,6 +60,13 @@
 .operator-metrics span, .operator-health span, .operator-invariant > span { display: block; margin-bottom: 11px; color: var(--text-muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .operator-metrics strong { display: block; color: var(--text); font-size: 17px; font-weight: 500; line-height: 1.25; }
 .operator-metrics small { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.operator-schedule { display: grid; gap: 7px; margin-top: 18px; border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.operator-schedule > span { color: var(--soft-lavender); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.operator-schedule > strong { color: var(--text); font-size: 16px; font-weight: 600; }
+.operator-schedule__countdown { font-family: Manrope, sans-serif; font-size: clamp(28px, 4vw, 38px) !important; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+.operator-schedule p { max-width: 620px; margin: 0; color: var(--text-soft); font-size: 11px; line-height: 1.55; }
+.operator-schedule--awaiting-lock > span { color: #e9cb8f; }
+.operator-schedule--settled > span, .operator-schedule--cancelled > span { color: var(--success); }
 .operator-workbench { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 48px; }
 .operator-lifecycle, .operator-actions { border-top: 0; padding-top: 42px; }
 .operator-lifecycle__list { display: grid; gap: 0; margin-top: 33px; }

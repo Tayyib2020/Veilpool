@@ -90,6 +90,9 @@
 .app-private-card__actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .app-private-card__actions .button { min-height: 47px; }
 .app-action-note { margin: 15px 0 0; color: var(--text-muted); font-size: 11px; }
+.app-winnings-notice { display: grid; gap: 5px; margin-top: 13px; border-left: 2px solid color-mix(in srgb, var(--accent) 65%, var(--line)); padding: 10px 12px; background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.app-winnings-notice strong { color: var(--text-soft); font-size: 12px; font-weight: 600; }
+.app-winnings-notice span { color: var(--text-muted); font-size: 11px; line-height: 1.55; }
 .app-private-card__footer { display: flex; justify-content: space-between; gap: 14px; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 15px; color: var(--text-muted); font-size: 10px; }
 .app-private-card__footer span:first-child { display: inline-flex; align-items: center; gap: 7px; }
 .app-private-card__footer svg { color: var(--success); }
@@ -108,6 +111,11 @@
 .app-round-monitor__top { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
 .app-round-monitor__top strong { display: block; margin-top: 7px; color: var(--text); font-size: 15px; font-weight: 600; }
 .app-round-monitor__status { color: var(--soft-lavender); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; text-align: right; }
+.app-round-monitor__schedule { display: grid; gap: 6px; margin-top: 17px; border: 1px solid var(--line); border-radius: 9px; padding: 13px; background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.app-round-monitor__schedule > span { color: var(--soft-lavender); font-size: 9px; font-weight: 700; letter-spacing: .1em; }
+.app-round-monitor__schedule > strong { color: var(--text); font-size: 14px; font-weight: 600; }
+.app-round-monitor__schedule > .app-round-monitor__countdown-value { margin-top: 2px; font-family: Manrope, sans-serif; font-size: clamp(24px, 3vw, 32px); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.app-round-monitor__schedule p { margin: 2px 0 0; color: var(--text-soft); font-size: 11px; line-height: 1.5; }
 .app-round-monitor__countdown { display: grid; gap: 4px; margin-top: 17px; }
 .app-round-monitor__countdown strong { color: var(--text); font-family: Manrope, sans-serif; font-size: clamp(25px, 3vw, 33px); letter-spacing: -.06em; }
 .app-round-monitor__countdown span { color: var(--text-muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }

@@ -2,7 +2,7 @@ import { getAddress, isAddress } from "ethers";
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const DEFAULT_EXPLORER_BASE_URL = "https://sepolia.etherscan.io";
-export const DEFAULT_ROUND_DURATION_SECONDS = 7 * 24 * 60 * 60;
+export const DEFAULT_ROUND_DURATION_SECONDS = 24 * 60 * 60;
 
 function readPositiveInteger(key: string, fallback: number): number {
   const value = Number(import.meta.env[key]);

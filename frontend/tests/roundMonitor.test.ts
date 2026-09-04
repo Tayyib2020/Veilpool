@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  advancePublicRoundSchedule,
   depositEmptyStateMessage,
   depositParticipationCopy,
   depositParticipationMessage,
   formatRoundCountdown,
+  formatRoundClockCountdown,
+  persistPublicRoundSchedule,
+  readPublicRoundSchedule,
   remainingScheduleSeconds,
   roundMonitorView,
 } from "../src/lib/roundMonitor.ts";
@@ -114,4 +118,40 @@ test("keeps disconnected or unavailable monitor state non-mutating", () => {
   const view = roundMonitorView(undefined, undefined, at(60), schedule);
   assert.equal(view.mode, "unavailable");
   assert.match(depositParticipationMessage(view), /Connect to read/);
+});
+
+test("creates a persisted public 24-hour next-round anchor after settlement", () => {
+  const current = advancePublicRoundSchedule(undefined, 1n, 6n, 2_000, { durationSeconds: 24 * 60 * 60 });
+  assert.deepEqual(current, { phase: "next", targetRoundId: "2", scheduledStart: 88_400, durationSeconds: 86_400 });
+  const storage = new Map<string, string>();
+  const storageLike = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => void storage.set(key, value) };
+  persistPublicRoundSchedule(current!, storageLike);
+  assert.deepEqual(readPublicRoundSchedule(storageLike), current);
+  assert.equal(storage.get("veilpool.public-round-schedule.v1")?.includes("wallet"), false);
+});
+
+test("renders settled ready-to-open and open ready-to-lock schedule states", () => {
+  const settled = roundMonitorView(1n, 6n, 88_400, { phase: "next", targetRoundId: "2", startTimestamp: 88_400, durationSeconds: 86_400 });
+  assert.equal(settled.scheduleHeading, "ROUND READY");
+  assert.equal(settled.scheduleTitle, "Round #2 is ready to open");
+  assert.match(settled.scheduleSupporting ?? "", /Waiting for the operator/);
+
+  const open = roundMonitorView(2n, 0n, 2_000, { phase: "open", roundId: "2", startTimestamp: 1_000, durationSeconds: 86_000 });
+  assert.equal(open.scheduleHeading, "ROUND #2 · DEPOSITS OPEN");
+  assert.equal(open.scheduleTitle, "Draw ready in");
+  assert.equal(open.countdownSeconds, 85_000);
+  assert.equal(roundMonitorView(2n, 0n, 87_001, { phase: "open", roundId: "2", startTimestamp: 1_001, durationSeconds: 86_000 }).scheduleHeading, "ROUND READY TO LOCK");
+});
+
+test("formats the schedule as an HH : MM : SS public countdown", () => {
+  assert.equal(formatRoundClockCountdown(86_400), "24 : 00 : 00");
+  assert.equal(formatRoundClockCountdown(3_661), "01 : 01 : 01");
+  assert.equal(formatRoundClockCountdown(-1), "00 : 00 : 00");
+});
+
+test("schedule state survives wallet changes without storing wallet data", () => {
+  const current = advancePublicRoundSchedule(undefined, 1n, 6n, 10_000, { durationSeconds: 86_400 });
+  const afterWalletChange = advancePublicRoundSchedule(current, undefined, undefined, 20_000, { durationSeconds: 86_400 });
+  assert.deepEqual(afterWalletChange, current);
+  assert.doesNotMatch(JSON.stringify(current), /address|wallet|account|private/i);
 });

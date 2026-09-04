@@ -21,14 +21,14 @@ import {
 } from "lucide-react";
 import { Button, ConnectedWalletMenu, ThemeToggle, VeilPoolLoader, VeilPoolLogo, WalletSelector, WithdrawalProgress } from "./components";
 import "./user-app.css";
-import { canBeginOperation, formatAddress, operationButtonState, operationCopy, operationError, operationUiState, roundStateDescription, roundStateLabel, safeErrorDetails, shouldShowSettledWinningsMessage, settledWinningsMessage, validateAmount } from "./appLogic";
+import { canBeginOperation, formatAddress, operationButtonState, operationCopy, operationError, operationUiState, prizeWithdrawalComingSoonNotice, roundStateDescription, roundStateLabel, safeErrorDetails, shouldShowSettledWinningsMessage, settledWinningsMessage, validateAmount } from "./appLogic";
 import { contractsConfigured, contractConfig, explorerTxUrl, missingCoreContracts, roundSchedule } from "./config/contracts";
 import { depositInputBinding } from "./lib/fheInputBinding";
 import { canStartFaucetMint, faucetAvailability, mintTestTokens, type MintableToken } from "./lib/testTokenFaucet";
 import { balanceStatusText, readUnderlyingBalance, type BalanceReadStatus } from "./lib/underlyingBalance";
 import { decryptHandle, encryptUint64, publicDecryptHandle, readContracts, type ReadContracts, waitForTransaction } from "./lib/veilpoolClient";
 import { canOfferRecovery, canOfferResume, canResumeWithBalance, createWalletSessionGuard, hasConfidentialBalance, requiredWrapAmount, sameWalletSession, UNWRAP_PROGRESS_STEPS, unwrapProgressCopy, unwrapProgressStep, unwrapSuccessCopy, wrapperBalancePresentation, wrapperStateSessionKey, type UnwrapProgressStatus, type WalletSessionGuard, type WalletSessionToken } from "./lib/depositRecovery";
-import { depositEmptyStateMessage, depositParticipationCopy, formatRoundCountdown, roundMonitorView, type RoundMonitorView } from "./lib/roundMonitor";
+import { depositEmptyStateMessage, depositParticipationCopy, formatRoundClockCountdown, roundMonitorView, type RoundMonitorView, usePublicRoundSchedule } from "./lib/roundMonitor";
 import { displayErrorMessage, useWallet, type WalletState } from "./wallet";
 
 type ModalKind = "deposit" | "withdraw" | null;
@@ -205,7 +205,7 @@ function RevealValue({ kind, status, value, decimals, onReveal, onHide }: { kind
 
 function SettledWinningsResult({ value, decimals, reduced }: { value: bigint; decimals: number; reduced: boolean | null }) {
   const message = settledWinningsMessage(value, decimals);
-  return <motion.div className={`app-settled-result app-settled-result--${message.tone}`} role="status" aria-live="polite" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, ease: "easeOut" }}><span className="app-settled-result__mark" aria-hidden="true">{message.tone === "won" ? "✦" : "✓"}</span><div><strong>{message.title}</strong><span>{message.body}</span></div></motion.div>;
+  return <><motion.div className={`app-settled-result app-settled-result--${message.tone}`} role="status" aria-live="polite" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, ease: "easeOut" }}><span className="app-settled-result__mark" aria-hidden="true">{message.tone === "won" ? "✦" : "✓"}</span><div><strong>{message.title}</strong><span>{message.body}</span></div></motion.div><div className="app-winnings-notice" role="note"><strong>{prizeWithdrawalComingSoonNotice.title}</strong><span>{prizeWithdrawalComingSoonNotice.body}</span></div></>;
 }
 
 function WrappedBalanceNotice({
@@ -264,7 +264,7 @@ function RoundMonitor({ view }: { view: RoundMonitorView }) {
     ["DRAW", "Selection"],
     ["SETTLED", "Complete"],
   ] as const;
-  return <div className={`app-round-monitor app-round-monitor--${view.mode}`} aria-label="Round monitor"><div className="app-round-monitor__top"><div><span className="app-kicker">Round monitor</span><strong>{view.title}</strong></div><span className="app-round-monitor__status">{view.status}</span></div>{view.countdownSeconds !== undefined && <div className="app-round-monitor__countdown"><strong>{formatRoundCountdown(view.countdownSeconds)}</strong><span>until scheduled round close</span></div>}<p>{view.supporting}</p><div className="app-round-monitor__lifecycle" aria-label="Round lifecycle">{lifecycle.map(([label, description], index) => <div className={index <= ["open", "locked", "draw", "settled"].indexOf(view.lifecycleStage) ? "is-reached" : ""} key={label}><span>{label}</span><small>{description}</small></div>)}</div></div>;
+  return <div className={`app-round-monitor app-round-monitor--${view.mode}`} aria-label="Round monitor"><div className="app-round-monitor__top"><div><span className="app-kicker">Round monitor</span><strong>{view.title}</strong></div><span className="app-round-monitor__status">{view.status}</span></div>{view.scheduleHeading && <div className="app-round-monitor__schedule"><span>{view.scheduleHeading}</span>{view.scheduleTitle && <strong>{view.scheduleTitle}</strong>}{view.countdownSeconds !== undefined && <strong className="app-round-monitor__countdown-value">{formatRoundClockCountdown(view.countdownSeconds)}</strong>}<p>{view.scheduleSupporting}</p></div>}<p>{view.supporting}</p><div className="app-round-monitor__lifecycle" aria-label="Round lifecycle">{lifecycle.map(([label, description], index) => <div className={index <= ["open", "locked", "draw", "settled"].indexOf(view.lifecycleStage) ? "is-reached" : ""} key={label}><span>{label}</span><small>{description}</small></div>)}</div></div>;
 }
 
 function Modal({ kind, amount, setAmount, state, decimals, available, balanceStatus, balanceError, onClose, onSubmit, onRepeat }: { kind: Exclude<ModalKind, null>; amount: string; setAmount: (value: string) => void; state?: OperationState; decimals: number; available?: bigint; balanceStatus: BalanceReadStatus; balanceError?: string; onClose: () => void; onSubmit: () => void; onRepeat: () => void }) {
@@ -405,10 +405,9 @@ export default function UserApp() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   useEffect(() => {
-    if (roundSchedule.startTimestamp === undefined) return;
     const update = () => setNowSeconds(Math.floor(Date.now() / 1000));
     update();
-    const interval = window.setInterval(update, 60_000);
+    const interval = window.setInterval(update, 1_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -436,7 +435,8 @@ export default function UserApp() {
   const savings = reveals.savings;
   const winnings = reveals.winnings;
   const roundState = displayRoundState(state.roundState);
-  const roundMonitor = useMemo(() => roundMonitorView(state.roundId, state.roundState, nowSeconds, roundSchedule), [nowSeconds, state.roundId, state.roundState]);
+  const publicSchedule = usePublicRoundSchedule(state.roundId, state.roundState, nowSeconds, roundSchedule);
+  const roundMonitor = useMemo(() => roundMonitorView(state.roundId, state.roundState, nowSeconds, publicSchedule), [nowSeconds, publicSchedule, state.roundId, state.roundState]);
   const participationCopy = depositParticipationCopy(roundMonitor);
 
   const openModal = (kind: Exclude<ModalKind, null>, presetAmount?: string) => {

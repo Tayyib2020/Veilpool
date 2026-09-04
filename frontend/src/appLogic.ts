@@ -19,6 +19,11 @@ export type SettledWinningsMessage = {
   body: string;
 };
 
+export const prizeWithdrawalComingSoonNotice = {
+  title: "Prize withdrawal coming soon",
+  body: "Direct withdrawal of private winnings is planned for an upcoming VeilPool release in the next few weeks. Your winnings remain recorded privately onchain.",
+} as const;
+
 export type PrivateOperationKind = "deposit" | "withdraw";
 
 export function operationCopy(kind: PrivateOperationKind): { initialAction: string; preparingAction: string; successAction: string; successStatus: string } {

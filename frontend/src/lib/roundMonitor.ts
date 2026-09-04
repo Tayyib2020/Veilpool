@@ -1,7 +1,17 @@
+import { useEffect, useMemo, useState } from "react";
+
 export type RoundSchedule = {
   durationSeconds: number;
   startTimestamp?: number;
+  phase?: "open" | "next";
+  targetRoundId?: bigint | string;
 };
+
+export type PersistedPublicRoundSchedule =
+  | { phase: "open"; roundId: string; scheduledStart: number; durationSeconds: number }
+  | { phase: "next"; targetRoundId: string; scheduledStart: number; durationSeconds: number };
+
+export const PUBLIC_ROUND_SCHEDULE_STORAGE_KEY = "veilpool.public-round-schedule.v1";
 
 export type RoundMonitorMode =
   | "live"
@@ -22,6 +32,10 @@ export type RoundMonitorView = {
   supporting: string;
   roundLabel: string;
   countdownSeconds?: number;
+  scheduleHeading?: string;
+  scheduleTitle?: string;
+  scheduleSupporting?: string;
+  countdownLabel?: string;
   lifecycleStage: "open" | "locked" | "draw" | "settled" | "cancelled" | "unavailable";
 };
 
@@ -32,12 +46,88 @@ export type DepositParticipationCopy = {
 
 const DAY_SECONDS = 24 * 60 * 60;
 
+type StorageLike = Pick<Storage, "getItem" | "setItem">;
+
+function browserStorage(): StorageLike | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function validSchedule(value: unknown): value is PersistedPublicRoundSchedule {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if ((candidate.phase !== "open" && candidate.phase !== "next") || typeof candidate.scheduledStart !== "number" || !Number.isFinite(candidate.scheduledStart) || typeof candidate.durationSeconds !== "number" || !Number.isFinite(candidate.durationSeconds) || candidate.durationSeconds <= 0) return false;
+  if (candidate.phase === "open") return typeof candidate.roundId === "string";
+  return typeof candidate.targetRoundId === "string";
+}
+
+export function readPublicRoundSchedule(storage: StorageLike | undefined = browserStorage()): PersistedPublicRoundSchedule | undefined {
+  if (!storage) return undefined;
+  try {
+    const raw = storage.getItem(PUBLIC_ROUND_SCHEDULE_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed: unknown = JSON.parse(raw);
+    return validSchedule(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function persistPublicRoundSchedule(schedule: PersistedPublicRoundSchedule, storage: StorageLike | undefined = browserStorage()): void {
+  if (!storage) return;
+  try {
+    storage.setItem(PUBLIC_ROUND_SCHEDULE_STORAGE_KEY, JSON.stringify(schedule));
+  } catch {
+    // Storage is an enhancement; the onchain lifecycle remains authoritative.
+  }
+}
+
+function sameSchedule(left: PersistedPublicRoundSchedule | undefined, right: PersistedPublicRoundSchedule | undefined): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function advancePublicRoundSchedule(current: PersistedPublicRoundSchedule | undefined, roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, configured: RoundSchedule): PersistedPublicRoundSchedule | undefined {
+  if (roundId === undefined || roundState === undefined || !Number.isFinite(nowSeconds) || !Number.isFinite(configured.durationSeconds) || configured.durationSeconds <= 0) return current;
+  const id = roundId.toString();
+  const durationSeconds = Math.floor(configured.durationSeconds);
+  if (roundState === 6n || roundState === 7n) {
+    const targetRoundId = (roundId + 1n).toString();
+    if (current?.phase === "next" && current.targetRoundId === targetRoundId && current.durationSeconds === durationSeconds) return current;
+    return { phase: "next", targetRoundId, scheduledStart: Math.floor(nowSeconds) + durationSeconds, durationSeconds };
+  }
+  if (roundState === 0n) {
+    if (current?.phase === "next" && current.targetRoundId === id && current.durationSeconds === durationSeconds) {
+      return { phase: "open", roundId: id, scheduledStart: current.scheduledStart, durationSeconds };
+    }
+    if (current?.phase === "open" && current.roundId === id && current.durationSeconds === durationSeconds) return current;
+    return { phase: "open", roundId: id, scheduledStart: configured.startTimestamp ?? Math.floor(nowSeconds), durationSeconds };
+  }
+  return current;
+}
+
+export function usePublicRoundSchedule(roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, configured: RoundSchedule): RoundSchedule {
+  const [persisted, setPersisted] = useState<PersistedPublicRoundSchedule | undefined>(() => readPublicRoundSchedule());
+  const resolved = useMemo(() => advancePublicRoundSchedule(persisted, roundId, roundState, nowSeconds, configured), [configured.durationSeconds, configured.startTimestamp, nowSeconds, persisted, roundId, roundState]);
+  useEffect(() => {
+    if (sameSchedule(persisted, resolved) || !resolved) return;
+    setPersisted(resolved);
+    persistPublicRoundSchedule(resolved);
+  }, [persisted, resolved]);
+  if (!resolved) return configured;
+  return { durationSeconds: resolved.durationSeconds, startTimestamp: resolved.scheduledStart, phase: resolved.phase, targetRoundId: resolved.phase === "next" ? resolved.targetRoundId : resolved.roundId };
+}
+
 function roundLabel(roundId?: bigint): string {
   return roundId === undefined ? "Round" : `Round #${roundId.toString()}`;
 }
 
 function scheduledEnd(schedule: RoundSchedule): number | undefined {
   if (schedule.startTimestamp === undefined || !Number.isFinite(schedule.startTimestamp) || !Number.isFinite(schedule.durationSeconds)) return undefined;
+  if (schedule.phase === "next") return schedule.startTimestamp;
   return schedule.startTimestamp + Math.max(0, schedule.durationSeconds);
 }
 
@@ -55,6 +145,14 @@ export function formatRoundCountdown(totalSeconds: number): string {
   return `${days}d ${hours.toString().padStart(2, "0")}h ${minutes.toString().padStart(2, "0")}m`;
 }
 
+export function formatRoundClockCountdown(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / (60 * 60));
+  const minutes = Math.floor((safeSeconds % (60 * 60)) / 60);
+  const seconds = safeSeconds % 60;
+  return `${hours.toString().padStart(2, "0")} : ${minutes.toString().padStart(2, "0")} : ${seconds.toString().padStart(2, "0")}`;
+}
+
 export function roundMonitorView(roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, schedule: RoundSchedule): RoundMonitorView {
   const label = roundLabel(roundId);
   const remaining = remainingScheduleSeconds(schedule, nowSeconds);
@@ -65,12 +163,12 @@ export function roundMonitorView(roundId: bigint | undefined, roundState: bigint
   switch (roundState) {
     case 0n:
       if (remaining !== undefined && remaining === 0) {
-        return { mode: "awaiting-lock", title: "Awaiting round lock", status: "Schedule elapsed", supporting: "The scheduled participation window has ended. Waiting for the onchain round transition.", roundLabel: label, countdownSeconds: remaining, lifecycleStage: "open" };
+        return { mode: "awaiting-lock", title: "Awaiting round lock", status: "Schedule elapsed", supporting: "The scheduled participation window has ended. Waiting for the onchain round transition.", scheduleHeading: "ROUND READY TO LOCK", scheduleSupporting: "The deposit window has ended. Waiting for the operator to lock the round onchain.", countdownSeconds: remaining, countdownLabel: "", roundLabel: label, lifecycleStage: "open" };
       }
       if (remaining !== undefined && remaining <= DAY_SECONDS) {
-        return { mode: "closing-soon", title: `${label} — Closing soon`, status: "Deposits open", supporting: "Eligibility will be frozen when the round is locked.", roundLabel: label, countdownSeconds: remaining, lifecycleStage: "open" };
+        return { mode: "closing-soon", title: `${label} — Closing soon`, status: "Deposits open", supporting: "Eligibility will be frozen when the round is locked.", scheduleHeading: `${label.toUpperCase()} · DEPOSITS OPEN`, scheduleTitle: "Draw ready in", scheduleSupporting: "Private deposits remain open until the scheduled draw window.", countdownSeconds: remaining, countdownLabel: "", roundLabel: label, lifecycleStage: "open" };
       }
-      return { mode: "live", title: `${label} — Live`, status: "Deposits open", supporting: "Deposits made before the round locks contribute to this round's encrypted, balance-weighted draw.", roundLabel: label, countdownSeconds: remaining, lifecycleStage: "open" };
+      return { mode: "live", title: `${label} — Live`, status: "Deposits open", supporting: "Deposits made before the round locks contribute to this round's encrypted, balance-weighted draw.", scheduleHeading: `${label.toUpperCase()} · DEPOSITS OPEN`, scheduleTitle: "Draw ready in", scheduleSupporting: "Private deposits remain open until the scheduled draw window.", countdownSeconds: remaining, countdownLabel: "", roundLabel: label, lifecycleStage: "open" };
     case 1n:
       return { mode: "locked", title: `${label} — Locked`, status: "Eligibility snapshot complete", supporting: "Deposits for this draw are no longer changing its eligibility snapshot.", roundLabel: label, lifecycleStage: "locked" };
     case 2n:
@@ -81,12 +179,18 @@ export function roundMonitorView(roundId: bigint | undefined, roundState: bigint
     case 5n:
       return { mode: "retry-required", title: "Draw retry required", status: "Fresh encrypted randomness needed", supporting: "The draw can be retried with a fresh encrypted randomness batch. Participant funds are not at risk.", roundLabel: label, lifecycleStage: "draw" };
     case 6n:
-      return { mode: "settled", title: `${label} — Settled`, status: "Prize draw complete", supporting: "This round is settled. Authorized participants can review their own private results.", roundLabel: label, lifecycleStage: "settled" };
+      return closedRoundView("settled", label, roundId, remaining, "This round is settled. Authorized participants can review their own private results.");
     case 7n:
-      return { mode: "cancelled", title: `${label} — Cancelled`, status: "Round closed", supporting: "This round ended without creating a prize.", roundLabel: label, lifecycleStage: "cancelled" };
+      return closedRoundView("cancelled", label, roundId, remaining, "This round ended without creating a prize.");
     default:
       return { mode: "unavailable", title: "Round status unavailable", status: "Unknown onchain state", supporting: "The onchain round state will remain the source of truth.", roundLabel: label, lifecycleStage: "unavailable" };
   }
+}
+
+function closedRoundView(mode: "settled" | "cancelled", label: string, roundId: bigint | undefined, remaining: number | undefined, supporting: string): RoundMonitorView {
+  const nextLabel = roundId === undefined ? "the next round" : `Round #${(roundId + 1n).toString()}`;
+  const ready = remaining !== undefined && remaining === 0;
+  return { mode, title: `${label} — ${mode === "settled" ? "Settled" : "Cancelled"}`, status: mode === "settled" ? "Prize draw complete" : "Round closed", supporting, scheduleHeading: ready ? "ROUND READY" : "NEXT ROUND", scheduleTitle: ready ? `${nextLabel} is ready to open` : `${nextLabel} begins in`, scheduleSupporting: ready ? "The scheduled start time has arrived. Waiting for the operator to open the next round onchain." : "A new 24-hour deposit window is scheduled after each round.", countdownSeconds: remaining, countdownLabel: "", roundLabel: label, lifecycleStage: mode };
 }
 
 export function depositParticipationMessage(view: RoundMonitorView): string {

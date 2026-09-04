@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { canBeginOperation, classifyError, formatAddress, isSepoliaChain, nextTransactionState, operationButtonState, operationCopy, operationUiState, roundStateDescription, roundStateLabel, safeErrorDetails, settledWinningsMessage, shouldShowSettledWinningsMessage, validateAmount } from "../src/appLogic.ts";
+import { canBeginOperation, classifyError, formatAddress, isSepoliaChain, nextTransactionState, operationButtonState, operationCopy, operationUiState, prizeWithdrawalComingSoonNotice, roundStateDescription, roundStateLabel, safeErrorDetails, settledWinningsMessage, shouldShowSettledWinningsMessage, validateAmount } from "../src/appLogic.ts";
 
 test("formats wallet addresses without exposing the full value in compact UI", () => {
   assert.equal(formatAddress("0x1234567890abcdef1234567890abcdef12345678"), "0x12345…5678");
@@ -99,4 +99,11 @@ test("shows settled winnings feedback only after an authorized reveal", () => {
   assert.equal(shouldShowSettledWinningsMessage(6, "idle", undefined), false);
   assert.equal(shouldShowSettledWinningsMessage(6, "failed", 11_999_999n), false);
   assert.equal(shouldShowSettledWinningsMessage(3, "revealed", 11_999_999n), false);
+});
+
+test("describes private winnings withdrawal as upcoming without implying an available action", () => {
+  assert.deepEqual(prizeWithdrawalComingSoonNotice, {
+    title: "Prize withdrawal coming soon",
+    body: "Direct withdrawal of private winnings is planned for an upcoming VeilPool release in the next few weeks. Your winnings remain recorded privately onchain.",
+  });
 });

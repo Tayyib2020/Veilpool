@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { availableOperatorActions, lifecycleIndex, operatorAccessState, operatorAddressMatches } from "../src/operatorLogic.ts";
 
 test("matches operator addresses case-insensitively without accepting missing addresses", () => {
@@ -25,6 +26,15 @@ test("exposes only valid open and draw actions for the current lifecycle", () =>
 test("maps retry-required and encrypted acceptance states without exposing winner controls", () => {
   assert.deepEqual(availableOperatorActions({ state: "RETRY_REQUIRED", participantCount: 2n, publicTotalWeight: 3n, unallocatedHarvestedYield: 0n, prizeCommitted: true, acceptanceDecryptionRequested: false, adapterConfigured: false, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), ["execute_draw"]);
   assert.deepEqual(availableOperatorActions({ state: "DRAWING", participantCount: 2n, unallocatedHarvestedYield: 0n, prizeCommitted: true, acceptanceDecryptionRequested: true, adapterConfigured: false, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), ["finalize_draw_acceptance"]);
+});
+
+test("operator writes use the connected wallet signer while reads stay provider-backed", () => {
+  const source = readFileSync(new URL("../src/OperatorPanel.tsx", import.meta.url), "utf8");
+  assert.match(source, /const readEngine = contracts\.engine/);
+  assert.match(source, /const writeEngine = contracts\.engine\.connect\(wallet\.signer\)/);
+  assert.equal([...source.matchAll(/tx = await contracts\.engine\./g)].length, 0);
+  assert.match(source, /start_next_round/);
+  assert.match(source, /`Start Round #\$\{state\.roundId \+ 1n\}`/);
 });
 
 test("keeps lifecycle ordering stable for the public state timeline", () => {
