@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CURRENT_ROUND_DEPOSIT_THRESHOLD } from "./roundParticipants.ts";
 
 export type RoundSchedule = {
   durationSeconds: number;
@@ -15,6 +16,7 @@ export const PUBLIC_ROUND_SCHEDULE_STORAGE_KEY = "veilpool.public-round-schedule
 
 export type RoundMonitorMode =
   | "live"
+  | "waiting-for-participants"
   | "closing-soon"
   | "awaiting-lock"
   | "locked"
@@ -90,34 +92,28 @@ function sameSchedule(left: PersistedPublicRoundSchedule | undefined, right: Per
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function advancePublicRoundSchedule(current: PersistedPublicRoundSchedule | undefined, roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, configured: RoundSchedule): PersistedPublicRoundSchedule | undefined {
+export function advancePublicRoundSchedule(current: PersistedPublicRoundSchedule | undefined, roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, configured: RoundSchedule, thresholdReached = false, thresholdTimestamp?: number): PersistedPublicRoundSchedule | undefined {
   if (roundId === undefined || roundState === undefined || !Number.isFinite(nowSeconds) || !Number.isFinite(configured.durationSeconds) || configured.durationSeconds <= 0) return current;
   const id = roundId.toString();
   const durationSeconds = Math.floor(configured.durationSeconds);
-  if (roundState === 6n || roundState === 7n) {
-    const targetRoundId = (roundId + 1n).toString();
-    if (current?.phase === "next" && current.targetRoundId === targetRoundId && current.durationSeconds === durationSeconds) return current;
-    return { phase: "next", targetRoundId, scheduledStart: Math.floor(nowSeconds) + durationSeconds, durationSeconds };
-  }
+  if (roundState === 6n || roundState === 7n) return undefined;
   if (roundState === 0n) {
-    if (current?.phase === "next" && current.targetRoundId === id && current.durationSeconds === durationSeconds) {
-      return { phase: "open", roundId: id, scheduledStart: current.scheduledStart, durationSeconds };
-    }
+    if (!thresholdReached) return undefined;
     if (current?.phase === "open" && current.roundId === id && current.durationSeconds === durationSeconds) return current;
-    return { phase: "open", roundId: id, scheduledStart: configured.startTimestamp ?? Math.floor(nowSeconds), durationSeconds };
+    return { phase: "open", roundId: id, scheduledStart: thresholdTimestamp ?? configured.startTimestamp ?? Math.floor(nowSeconds), durationSeconds };
   }
   return current;
 }
 
-export function usePublicRoundSchedule(roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, configured: RoundSchedule): RoundSchedule {
+export function usePublicRoundSchedule(roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, configured: RoundSchedule, thresholdReached = false, thresholdTimestamp?: number): RoundSchedule {
   const [persisted, setPersisted] = useState<PersistedPublicRoundSchedule | undefined>(() => readPublicRoundSchedule());
-  const resolved = useMemo(() => advancePublicRoundSchedule(persisted, roundId, roundState, nowSeconds, configured), [configured.durationSeconds, configured.startTimestamp, nowSeconds, persisted, roundId, roundState]);
+  const resolved = useMemo(() => advancePublicRoundSchedule(persisted, roundId, roundState, nowSeconds, configured, thresholdReached, thresholdTimestamp), [configured.durationSeconds, configured.startTimestamp, nowSeconds, persisted, roundId, roundState, thresholdReached, thresholdTimestamp]);
   useEffect(() => {
     if (sameSchedule(persisted, resolved) || !resolved) return;
     setPersisted(resolved);
     persistPublicRoundSchedule(resolved);
   }, [persisted, resolved]);
-  if (!resolved) return configured;
+  if (!resolved) return roundState === 0n && !thresholdReached ? { durationSeconds: configured.durationSeconds } : configured;
   return { durationSeconds: resolved.durationSeconds, startTimestamp: resolved.scheduledStart, phase: resolved.phase, targetRoundId: resolved.phase === "next" ? resolved.targetRoundId : resolved.roundId };
 }
 
@@ -153,7 +149,7 @@ export function formatRoundClockCountdown(totalSeconds: number): string {
   return `${hours.toString().padStart(2, "0")} : ${minutes.toString().padStart(2, "0")} : ${seconds.toString().padStart(2, "0")}`;
 }
 
-export function roundMonitorView(roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, schedule: RoundSchedule): RoundMonitorView {
+export function roundMonitorView(roundId: bigint | undefined, roundState: bigint | undefined, nowSeconds: number, schedule: RoundSchedule, currentRoundDepositors?: number): RoundMonitorView {
   const label = roundLabel(roundId);
   const remaining = remainingScheduleSeconds(schedule, nowSeconds);
   if (roundState === undefined) {
@@ -162,6 +158,10 @@ export function roundMonitorView(roundId: bigint | undefined, roundState: bigint
 
   switch (roundState) {
     case 0n:
+      if (currentRoundDepositors !== undefined && currentRoundDepositors < CURRENT_ROUND_DEPOSIT_THRESHOLD) {
+        const count = Math.max(0, currentRoundDepositors);
+        return { mode: "waiting-for-participants", title: `${label} — Waiting for participants`, status: "Deposit threshold", scheduleHeading: "WAITING FOR PARTICIPANTS", scheduleTitle: count === 0 ? "Waiting for the first private deposit" : `${count} of 2 participants confirmed`, scheduleSupporting: count === 0 ? "The deposit window begins after two distinct participants join this round." : "One more private participant is needed to begin the deposit window.", supporting: "Current-round deposits are verified from confirmed public deposit events; amounts remain confidential.", roundLabel: label, lifecycleStage: "open" };
+      }
       if (remaining !== undefined && remaining === 0) {
         return { mode: "awaiting-lock", title: "Awaiting round lock", status: "Schedule elapsed", supporting: "The scheduled participation window has ended. Waiting for the onchain round transition.", scheduleHeading: "ROUND READY TO LOCK", scheduleSupporting: "The deposit window has ended. Waiting for the operator to lock the round onchain.", countdownSeconds: remaining, countdownLabel: "", roundLabel: label, lifecycleStage: "open" };
       }
@@ -189,8 +189,7 @@ export function roundMonitorView(roundId: bigint | undefined, roundState: bigint
 
 function closedRoundView(mode: "settled" | "cancelled", label: string, roundId: bigint | undefined, remaining: number | undefined, supporting: string): RoundMonitorView {
   const nextLabel = roundId === undefined ? "the next round" : `Round #${(roundId + 1n).toString()}`;
-  const ready = remaining !== undefined && remaining === 0;
-  return { mode, title: `${label} — ${mode === "settled" ? "Settled" : "Cancelled"}`, status: mode === "settled" ? "Prize draw complete" : "Round closed", supporting, scheduleHeading: ready ? "ROUND READY" : "NEXT ROUND", scheduleTitle: ready ? `${nextLabel} is ready to open` : `${nextLabel} begins in`, scheduleSupporting: ready ? "The scheduled start time has arrived. Waiting for the operator to open the next round onchain." : "A new 24-hour deposit window is scheduled after each round.", countdownSeconds: remaining, countdownLabel: "", roundLabel: label, lifecycleStage: mode };
+  return { mode, title: `${label} — ${mode === "settled" ? "Settled" : "Cancelled"}`, status: mode === "settled" ? "Prize draw complete" : "Round closed", supporting, roundLabel: label, lifecycleStage: mode };
 }
 
 export function depositParticipationMessage(view: RoundMonitorView): string {
@@ -201,6 +200,9 @@ export function depositParticipationMessage(view: RoundMonitorView): string {
 export function depositParticipationCopy(view: RoundMonitorView): DepositParticipationCopy {
   if (view.mode === "live" || view.mode === "closing-soon") {
     return { title: `Deposit now to participate in ${view.roundLabel}.` };
+  }
+  if (view.mode === "waiting-for-participants") {
+    return { title: view.scheduleTitle ?? "Waiting for current-round participants.", supporting: view.scheduleSupporting };
   }
   if (view.mode === "awaiting-lock") {
     return {

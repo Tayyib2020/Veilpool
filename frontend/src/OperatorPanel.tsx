@@ -23,6 +23,7 @@ import { availableOperatorActions, lifecycleIndex, operatorAccessState, type Ope
 import { contractsConfigured, contractConfig, explorerTxUrl, roundSchedule } from "./config/contracts";
 import { publicDecryptHandle, readContracts, waitForTransaction, yieldAdapterContract, type ReadContracts } from "./lib/veilpoolClient";
 import { formatRoundClockCountdown, roundMonitorView, usePublicRoundSchedule, type RoundMonitorView } from "./lib/roundMonitor";
+import { useCurrentRoundDepositEvidence } from "./lib/roundParticipants";
 import { displayErrorMessage, useWallet, type WalletState } from "./wallet";
 import "./operator.css";
 
@@ -279,8 +280,10 @@ export default function OperatorPanel() {
     hasOperatorConfiguration: Boolean(contractsConfigured && contractConfig.prizeEngine),
   });
   const currentState = stateLabel(state.roundState);
-  const publicSchedule = usePublicRoundSchedule(state.roundId, state.roundState, nowSeconds, roundSchedule);
-  const roundMonitor = useMemo(() => roundMonitorView(state.roundId, state.roundState, nowSeconds, publicSchedule), [nowSeconds, publicSchedule, state.roundId, state.roundState]);
+  const currentRoundEvidence = useCurrentRoundDepositEvidence(wallet.provider, contractConfig.prizeEngine, contractConfig.veilPool, state.roundId, state.roundState);
+  const thresholdReached = currentRoundEvidence.status === "verified" && currentRoundEvidence.depositors.length >= 2;
+  const publicSchedule = usePublicRoundSchedule(state.roundId, state.roundState, nowSeconds, roundSchedule, thresholdReached, currentRoundEvidence.thresholdTimestamp);
+  const roundMonitor = useMemo(() => roundMonitorView(state.roundId, state.roundState, nowSeconds, publicSchedule, currentRoundEvidence.status === "verified" ? currentRoundEvidence.depositors.length : undefined), [currentRoundEvidence.depositors.length, currentRoundEvidence.status, nowSeconds, publicSchedule, state.roundId, state.roundState]);
   const actions = useMemo(() => access === "authorized" ? availableOperatorActions({
     state: currentState,
     participantCount: state.participantCount,
@@ -292,7 +295,7 @@ export default function OperatorPanel() {
     principalSyncPending: state.principalSyncPending,
     principalUnwrapPending: state.principalUnwrapPending,
     principalDeployed: state.principalDeployed,
-  }) : [], [access, currentState, state]);
+  }) .filter((action) => action !== "lock_round" || thresholdReached) : [], [access, currentState, state, thresholdReached]);
 
   const runAction = async (action: OperatorAction) => {
     if (!contracts?.engine || !wallet.signer || !wallet.ethereum || access !== "authorized") return;

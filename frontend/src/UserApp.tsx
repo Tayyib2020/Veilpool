@@ -29,6 +29,7 @@ import { balanceStatusText, readUnderlyingBalance, type BalanceReadStatus } from
 import { decryptHandle, encryptUint64, publicDecryptHandle, readContracts, type ReadContracts, waitForTransaction } from "./lib/veilpoolClient";
 import { canOfferRecovery, canOfferResume, canResumeWithBalance, createWalletSessionGuard, hasConfidentialBalance, requiredWrapAmount, sameWalletSession, UNWRAP_PROGRESS_STEPS, unwrapProgressCopy, unwrapProgressStep, unwrapSuccessCopy, wrapperBalancePresentation, wrapperStateSessionKey, type UnwrapProgressStatus, type WalletSessionGuard, type WalletSessionToken } from "./lib/depositRecovery";
 import { depositEmptyStateMessage, depositParticipationCopy, formatRoundClockCountdown, roundMonitorView, type RoundMonitorView, usePublicRoundSchedule } from "./lib/roundMonitor";
+import { useCurrentRoundDepositEvidence } from "./lib/roundParticipants";
 import { displayErrorMessage, useWallet, type WalletState } from "./wallet";
 
 type ModalKind = "deposit" | "withdraw" | null;
@@ -264,7 +265,12 @@ function RoundMonitor({ view }: { view: RoundMonitorView }) {
     ["DRAW", "Selection"],
     ["SETTLED", "Complete"],
   ] as const;
-  return <div className={`app-round-monitor app-round-monitor--${view.mode}`} aria-label="Round monitor"><div className="app-round-monitor__top"><div><span className="app-kicker">Round monitor</span><strong>{view.title}</strong></div><span className="app-round-monitor__status">{view.status}</span></div>{view.scheduleHeading && <div className="app-round-monitor__schedule"><span>{view.scheduleHeading}</span>{view.scheduleTitle && <strong>{view.scheduleTitle}</strong>}{view.countdownSeconds !== undefined && <strong className="app-round-monitor__countdown-value">{formatRoundClockCountdown(view.countdownSeconds)}</strong>}<p>{view.scheduleSupporting}</p></div>}<p>{view.supporting}</p><div className="app-round-monitor__lifecycle" aria-label="Round lifecycle">{lifecycle.map(([label, description], index) => <div className={index <= ["open", "locked", "draw", "settled"].indexOf(view.lifecycleStage) ? "is-reached" : ""} key={label}><span>{label}</span><small>{description}</small></div>)}</div></div>;
+  return <div className={`app-round-monitor app-round-monitor--${view.mode}`} aria-label="Round monitor"><div className="app-round-monitor__top"><div><span className="app-kicker">Round monitor</span><strong>{view.title}</strong></div><span className="app-round-monitor__status">{view.status}</span></div>{view.scheduleHeading && <div className="app-round-monitor__schedule"><span>{view.scheduleHeading}</span>{view.scheduleTitle && <strong>{view.scheduleTitle}</strong>}{view.countdownSeconds !== undefined && <><strong className="app-round-monitor__countdown-value">{formatRoundClockCountdown(view.countdownSeconds)}</strong><div className="app-round-monitor__time-units" aria-hidden="true"><span>HRS</span><span>MIN</span><span>SEC</span></div></>}<p>{view.scheduleSupporting}</p></div>}<p>{view.supporting}</p><div className="app-round-monitor__lifecycle" aria-label="Round lifecycle">{lifecycle.map(([label, description], index) => <div className={index <= ["open", "locked", "draw", "settled"].indexOf(view.lifecycleStage) ? "is-reached" : ""} key={label}><span>{label}</span><small>{description}</small></div>)}</div></div>;
+}
+
+function FundedRoundOverlay({ view, reduced, onDismiss }: { view: RoundMonitorView; reduced: boolean | null; onDismiss: () => void }) {
+  if (view.countdownSeconds === undefined || !view.roundLabel || !view.scheduleHeading || view.lifecycleStage !== "open") return null;
+  return <div className="app-funded-overlay" role="dialog" aria-modal="true" aria-labelledby="funded-round-title"><motion.div className="app-funded-overlay__panel" initial={reduced ? false : { opacity: 0, scale: .97, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: .3, ease: "easeOut" }}><span className="app-kicker">{view.roundLabel.toUpperCase()} IS FUNDED</span><h2 id="funded-round-title">Two private participants confirmed</h2><span className="app-funded-overlay__label">Deposits close in</span><strong className="app-funded-overlay__countdown">{formatRoundClockCountdown(view.countdownSeconds)}</strong><div className="app-funded-overlay__units"><span>HRS</span><span>MIN</span><span>SEC</span></div><p>The encrypted draw becomes ready after the deposit window.</p><Button variant="secondary" onClick={onDismiss}>Continue to dashboard <ArrowUpRight size={15} /></Button></motion.div></div>;
 }
 
 function Modal({ kind, amount, setAmount, state, decimals, available, balanceStatus, balanceError, onClose, onSubmit, onRepeat }: { kind: Exclude<ModalKind, null>; amount: string; setAmount: (value: string) => void; state?: OperationState; decimals: number; available?: bigint; balanceStatus: BalanceReadStatus; balanceError?: string; onClose: () => void; onSubmit: () => void; onRepeat: () => void }) {
@@ -305,6 +311,8 @@ export default function UserApp() {
   const [faucetError, setFaucetError] = useState<string>();
   const [faucetTxHash, setFaucetTxHash] = useState<string>();
   const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  const [publicEvidenceRefresh, setPublicEvidenceRefresh] = useState(0);
+  const [fundedOverlayRound, setFundedOverlayRound] = useState<string>();
   const [reveals, setReveals] = useState<Record<RevealKind, { status: RevealStatus; value?: bigint }>>({ savings: { status: "idle" }, winnings: { status: "idle" } });
   const [wrappedBalance, setWrappedBalance] = useState<WrappedBalanceState>({ status: "idle" });
   const [recovery, setRecovery] = useState<RecoveryState>({ status: "idle" });
@@ -435,8 +443,11 @@ export default function UserApp() {
   const savings = reveals.savings;
   const winnings = reveals.winnings;
   const roundState = displayRoundState(state.roundState);
-  const publicSchedule = usePublicRoundSchedule(state.roundId, state.roundState, nowSeconds, roundSchedule);
-  const roundMonitor = useMemo(() => roundMonitorView(state.roundId, state.roundState, nowSeconds, publicSchedule), [nowSeconds, publicSchedule, state.roundId, state.roundState]);
+  const currentRoundEvidence = useCurrentRoundDepositEvidence(wallet.provider, contractConfig.prizeEngine, contractConfig.veilPool, state.roundId, state.roundState, publicEvidenceRefresh);
+  const thresholdReached = currentRoundEvidence.status === "verified" && currentRoundEvidence.depositors.length >= 2;
+  const publicSchedule = usePublicRoundSchedule(state.roundId, state.roundState, nowSeconds, roundSchedule, thresholdReached, currentRoundEvidence.thresholdTimestamp);
+  const roundMonitor = useMemo(() => roundMonitorView(state.roundId, state.roundState, nowSeconds, publicSchedule, currentRoundEvidence.status === "verified" ? currentRoundEvidence.depositors.length : undefined), [currentRoundEvidence.depositors.length, currentRoundEvidence.status, nowSeconds, publicSchedule, state.roundId, state.roundState]);
+  const showFundedOverlay = thresholdReached && state.roundState === 0n && fundedOverlayRound !== state.roundId?.toString();
   const participationCopy = depositParticipationCopy(roundMonitor);
 
   const openModal = (kind: Exclude<ModalKind, null>, presetAmount?: string) => {
@@ -686,6 +697,7 @@ export default function UserApp() {
       setPartialDepositUnits(undefined);
       setReveals({ savings: { status: "idle" }, winnings: { status: "idle" } });
       addToast("Deposit confirmed.");
+      setPublicEvidenceRefresh((current) => current + 1);
       await refresh(true);
     } catch (depositError) {
       if (!sessionGuard.isCurrent(session)) return;
@@ -793,6 +805,7 @@ export default function UserApp() {
     </main>
     <footer className="app-footer"><VeilPoolLogo compact /><span>VeilPool · Phase 6B user application · no operator controls</span><a href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">Sepolia Explorer <ExternalLink size={12} /></a></footer>
     <Toasts toasts={toasts} />
+    {showFundedOverlay && <FundedRoundOverlay view={roundMonitor} reduced={reduced} onDismiss={() => setFundedOverlayRound(state.roundId?.toString())} />}
     {modal && <Modal kind={modal} amount={amount} setAmount={setAmount} state={operation} decimals={state.underlyingDecimals} available={modal === "deposit" ? (balanceStatus === "loaded" ? state.underlyingBalance : undefined) : savings.value} balanceStatus={modal === "deposit" ? balanceStatus : "loaded"} balanceError={balanceError} onClose={() => { if (!operation || operation.label === "complete" || operation.error) { setModal(null); setOperation(undefined); } }} onSubmit={() => void operationSubmit()} onRepeat={repeatOperation} />}
     <WalletSelector open={walletSelectionOpen} wallets={walletOptions} onClose={closeWalletSelection} onSelect={(walletId) => void connect(walletId)} />
   </div>;

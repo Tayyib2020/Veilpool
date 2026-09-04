@@ -120,9 +120,9 @@ test("keeps disconnected or unavailable monitor state non-mutating", () => {
   assert.match(depositParticipationMessage(view), /Connect to read/);
 });
 
-test("creates a persisted public 24-hour next-round anchor after settlement", () => {
-  const current = advancePublicRoundSchedule(undefined, 1n, 6n, 2_000, { durationSeconds: 24 * 60 * 60 });
-  assert.deepEqual(current, { phase: "next", targetRoundId: "2", scheduledStart: 88_400, durationSeconds: 86_400 });
+test("creates a persisted public 2-hour anchor after the second confirmed depositor", () => {
+  const current = advancePublicRoundSchedule(undefined, 2n, 0n, 2_000, { durationSeconds: 2 * 60 * 60 }, true, 2_000);
+  assert.deepEqual(current, { phase: "open", roundId: "2", scheduledStart: 2_000, durationSeconds: 7_200 });
   const storage = new Map<string, string>();
   const storageLike = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => void storage.set(key, value) };
   persistPublicRoundSchedule(current!, storageLike);
@@ -131,10 +131,8 @@ test("creates a persisted public 24-hour next-round anchor after settlement", ()
 });
 
 test("renders settled ready-to-open and open ready-to-lock schedule states", () => {
-  const settled = roundMonitorView(1n, 6n, 88_400, { phase: "next", targetRoundId: "2", startTimestamp: 88_400, durationSeconds: 86_400 });
-  assert.equal(settled.scheduleHeading, "ROUND READY");
-  assert.equal(settled.scheduleTitle, "Round #2 is ready to open");
-  assert.match(settled.scheduleSupporting ?? "", /Waiting for the operator/);
+  const settled = roundMonitorView(1n, 6n, 88_400, { durationSeconds: 7_200 });
+  assert.equal(settled.scheduleHeading, undefined);
 
   const open = roundMonitorView(2n, 0n, 2_000, { phase: "open", roundId: "2", startTimestamp: 1_000, durationSeconds: 86_000 });
   assert.equal(open.scheduleHeading, "ROUND #2 · DEPOSITS OPEN");
@@ -150,8 +148,27 @@ test("formats the schedule as an HH : MM : SS public countdown", () => {
 });
 
 test("schedule state survives wallet changes without storing wallet data", () => {
-  const current = advancePublicRoundSchedule(undefined, 1n, 6n, 10_000, { durationSeconds: 86_400 });
+  const current = advancePublicRoundSchedule(undefined, 2n, 0n, 10_000, { durationSeconds: 7_200 }, true, 10_000);
   const afterWalletChange = advancePublicRoundSchedule(current, undefined, undefined, 20_000, { durationSeconds: 86_400 });
   assert.deepEqual(afterWalletChange, current);
   assert.doesNotMatch(JSON.stringify(current), /address|wallet|account|private/i);
+});
+
+test("waits for two distinct current-round depositors before showing a timer", () => {
+  const noDepositors = roundMonitorView(2n, 0n, 10_000, { durationSeconds: 7_200 }, 0);
+  assert.equal(noDepositors.mode, "waiting-for-participants");
+  assert.equal(noDepositors.countdownSeconds, undefined);
+  assert.equal(noDepositors.scheduleTitle, "Waiting for the first private deposit");
+  const oneDepositor = roundMonitorView(2n, 0n, 10_000, { durationSeconds: 7_200 }, 1);
+  assert.equal(oneDepositor.scheduleTitle, "1 of 2 participants confirmed");
+  assert.equal(oneDepositor.countdownSeconds, undefined);
+  const funded = roundMonitorView(2n, 0n, 10_000, { phase: "open", roundId: "2", startTimestamp: 10_000, durationSeconds: 7_200 }, 2);
+  assert.equal(funded.countdownSeconds, 7_200);
+  assert.equal(funded.scheduleHeading, "ROUND #2 · DEPOSITS OPEN");
+});
+
+test("additional deposits do not restart the two-hour anchor", () => {
+  const first = advancePublicRoundSchedule(undefined, 2n, 0n, 10_000, { durationSeconds: 7_200 }, true, 10_000);
+  const later = advancePublicRoundSchedule(first, 2n, 0n, 10_100, { durationSeconds: 7_200 }, true, 10_100);
+  assert.equal(later?.scheduledStart, 10_000);
 });

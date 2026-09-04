@@ -2,12 +2,7 @@ import { getAddress, isAddress } from "ethers";
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const DEFAULT_EXPLORER_BASE_URL = "https://sepolia.etherscan.io";
-export const DEFAULT_ROUND_DURATION_SECONDS = 24 * 60 * 60;
-
-function readPositiveInteger(key: string, fallback: number): number {
-  const value = Number(import.meta.env[key]);
-  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
-}
+export const DEFAULT_ROUND_DURATION_SECONDS = 2 * 60 * 60;
 
 function readOptionalTimestamp(key: string): number | undefined {
   const value = Number(import.meta.env[key]);
@@ -34,7 +29,7 @@ export const contractConfig = {
 };
 
 export const roundSchedule = {
-  durationSeconds: readPositiveInteger("VITE_ROUND_DURATION_SECONDS", DEFAULT_ROUND_DURATION_SECONDS),
+  durationSeconds: DEFAULT_ROUND_DURATION_SECONDS,
   startTimestamp: readOptionalTimestamp("VITE_ROUND_START_TIMESTAMP"),
 };
 

@@ -116,6 +116,14 @@
 .app-round-monitor__schedule > strong { color: var(--text); font-size: 14px; font-weight: 600; }
 .app-round-monitor__schedule > .app-round-monitor__countdown-value { margin-top: 2px; font-family: Manrope, sans-serif; font-size: clamp(24px, 3vw, 32px); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .app-round-monitor__schedule p { margin: 2px 0 0; color: var(--text-soft); font-size: 11px; line-height: 1.5; }
+.app-round-monitor__time-units { display: grid; grid-template-columns: repeat(3, max-content); gap: 19px; color: var(--text-muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.app-funded-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 18px; background: rgba(4, 5, 8, .62); backdrop-filter: blur(10px); }
+.app-funded-overlay__panel { display: grid; justify-items: center; width: min(100%, 430px); gap: 12px; border: 1px solid var(--line-strong); border-radius: 14px; padding: 30px 26px 26px; background: var(--surface-raised); box-shadow: var(--shadow); text-align: center; }
+.app-funded-overlay__panel h2 { margin: 0; color: var(--text); font-size: clamp(23px, 5vw, 31px); font-weight: 500; letter-spacing: -.045em; line-height: 1.05; }
+.app-funded-overlay__label { margin-top: 6px; color: var(--text-soft); font-size: 11px; }
+.app-funded-overlay__countdown { color: var(--text); font-family: Manrope, sans-serif; font-size: clamp(34px, 9vw, 48px); font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: .035em; line-height: 1; }
+.app-funded-overlay__units { display: grid; grid-template-columns: repeat(3, 1fr); width: min(100%, 250px); color: var(--text-muted); font-size: 9px; letter-spacing: .1em; }
+.app-funded-overlay__panel p { max-width: 320px; margin: 2px 0 8px; color: var(--text-soft); font-size: 12px; line-height: 1.55; }
 .app-round-monitor__countdown { display: grid; gap: 4px; margin-top: 17px; }
 .app-round-monitor__countdown strong { color: var(--text); font-family: Manrope, sans-serif; font-size: clamp(25px, 3vw, 33px); letter-spacing: -.06em; }
 .app-round-monitor__countdown span { color: var(--text-muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
