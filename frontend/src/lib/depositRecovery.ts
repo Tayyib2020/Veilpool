@@ -16,6 +16,47 @@ export function wrapperStateSessionKey(status: string, address?: string, walletI
   return `connected:${walletId ?? ""}:${address.toLowerCase()}`;
 }
 
+export type WalletSessionToken = {
+  key: string;
+  generation: number;
+};
+
+export type WalletSessionGuard = {
+  update: (key: string) => WalletSessionToken;
+  capture: () => WalletSessionToken;
+  isCurrent: (token: WalletSessionToken) => boolean;
+};
+
+/**
+ * Invalidate wallet-scoped async work whenever the account, provider, or
+ * connection state changes. The generation prevents an old session from
+ * becoming valid again if the user later reconnects the same wallet.
+ */
+export function createWalletSessionGuard(initialKey = ""): WalletSessionGuard {
+  let activeKey = initialKey;
+  let generation = 0;
+
+  return {
+    update(key) {
+      if (key !== activeKey) {
+        activeKey = key;
+        generation += 1;
+      }
+      return { key: activeKey, generation };
+    },
+    capture() {
+      return { key: activeKey, generation };
+    },
+    isCurrent(token) {
+      return token.key === activeKey && token.generation === generation;
+    },
+  };
+}
+
+export function sameWalletSession(left: WalletSessionToken, right: WalletSessionToken): boolean {
+  return left.key === right.key && left.generation === right.generation;
+}
+
 export function requiredWrapAmount(requested: bigint, confidentialBalance: bigint): bigint {
   if (requested <= confidentialBalance) return 0n;
   return requested - confidentialBalance;

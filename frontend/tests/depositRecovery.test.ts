@@ -5,8 +5,10 @@ import {
   canOfferResume,
   canResumeWithBalance,
   checkpointAfterPrerequisites,
+  createWalletSessionGuard,
   hasConfidentialBalance,
   requiredWrapAmount,
+  sameWalletSession,
   UNWRAP_PROGRESS_STEPS,
   unwrapProgressCopy,
   unwrapProgressStep,
@@ -14,6 +16,16 @@ import {
   wrapperBalancePresentation,
   wrapperStateSessionKey,
 } from "../src/lib/depositRecovery.ts";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 test("detects an existing confidential wrapper balance without revealing it", () => {
   assert.equal(hasConfidentialBalance(`0x${"0".repeat(64)}`), false);
@@ -73,6 +85,131 @@ test("clears revealed wrapper state when the connected wallet session changes", 
   assert.notEqual(accountA, accountB);
   assert.notEqual(accountA, walletSwitch);
   assert.notEqual(accountA, disconnected);
+});
+
+test("ignores a stale Wallet A wrapper reveal after switching to Wallet B", async () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const pending = deferred<bigint>();
+  const walletASession = guard.capture();
+  let revealed: bigint | undefined;
+  const applyReveal = pending.promise.then((value) => {
+    if (guard.isCurrent(walletASession)) revealed = value;
+  });
+
+  guard.update("connected:wallet-b:0xbbb");
+  pending.resolve(40n);
+  await applyReveal;
+
+  assert.equal(revealed, undefined);
+});
+
+test("ignores a stale Wallet A reveal error after switching sessions", async () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const pending = deferred<bigint>();
+  const walletASession = guard.capture();
+  let error: unknown;
+  const applyError = pending.promise.catch((reason) => {
+    if (guard.isCurrent(walletASession)) error = reason;
+  });
+
+  guard.update("connected:wallet-b:0xbbb");
+  pending.reject(new Error("Wallet A relayer failure"));
+  await applyError;
+
+  assert.equal(error, undefined);
+});
+
+test("a refresh promise from Wallet A is not current for Wallet B", () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const walletASession = guard.capture();
+  guard.update("connected:wallet-b:0xbbb");
+  const walletBSession = guard.capture();
+
+  assert.equal(guard.isCurrent(walletASession), false);
+  assert.equal(guard.isCurrent(walletBSession), true);
+  assert.notEqual(walletASession.generation, walletBSession.generation);
+  assert.equal(sameWalletSession(walletASession, walletBSession), false);
+});
+
+test("a stale wrapped handle cannot be restored after a wallet switch", async () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const pending = deferred<string>();
+  const walletASession = guard.capture();
+  let wrappedHandle: string | undefined;
+  const applyHandle = pending.promise.then((handle) => {
+    if (guard.isCurrent(walletASession)) wrappedHandle = handle;
+  });
+
+  guard.update("connected:wallet-b:0xbbb");
+  pending.resolve(`0x${"1".padStart(64, "0")}`);
+  await applyHandle;
+
+  assert.equal(wrappedHandle, undefined);
+});
+
+test("disconnect invalidates pending wallet-scoped async results", () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const walletASession = guard.capture();
+  guard.update("disconnected:wallet-a");
+  assert.equal(guard.isCurrent(walletASession), false);
+});
+
+test("provider reselection invalidates pending wallet-scoped async results", () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const walletASession = guard.capture();
+  guard.update("connected:wallet-b:0xaaa");
+  assert.equal(guard.isCurrent(walletASession), false);
+});
+
+test("a reconnect cannot make an older token current again", () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const firstConnection = guard.capture();
+  guard.update("disconnected:wallet-a");
+  guard.update("connected:wallet-a:0xaaa");
+
+  assert.equal(guard.isCurrent(firstConnection), false);
+});
+
+test("stale completion cannot replace an authorized zero wrapper state", async () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const pending = deferred<bigint>();
+  const walletASession = guard.capture();
+  let wrapperValue = 0n;
+  const applyReveal = pending.promise.then((value) => {
+    if (guard.isCurrent(walletASession)) wrapperValue = value;
+  });
+
+  guard.update("connected:wallet-b:0xbbb");
+  pending.resolve(15n);
+  await applyReveal;
+
+  assert.equal(wrapperValue, 0n);
+  assert.deepEqual(wrapperBalancePresentation("revealed", wrapperValue), {
+    title: "No unused confidential balance.",
+    detail: "Your confidential wrapper currently holds 0 mUNDER.",
+  });
+});
+
+test("current-session async results still update normally", async () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const pending = deferred<bigint>();
+  const session = guard.capture();
+  let revealed: bigint | undefined;
+  const applyReveal = pending.promise.then((value) => {
+    if (guard.isCurrent(session)) revealed = value;
+  });
+
+  pending.resolve(25n);
+  await applyReveal;
+
+  assert.equal(revealed, 25n);
+});
+
+test("unwrap and recovery results are invalidated by a session change", () => {
+  const guard = createWalletSessionGuard("connected:wallet-a:0xaaa");
+  const unwrapSession = guard.capture();
+  guard.update("connected:wallet-b:0xbbb");
+  assert.equal(guard.isCurrent(unwrapSession), false);
 });
 
 test("keeps the authorized zero wrapper state independent of round state", () => {

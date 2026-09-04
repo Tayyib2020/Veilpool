@@ -27,7 +27,7 @@ import { depositInputBinding } from "./lib/fheInputBinding";
 import { canStartFaucetMint, faucetAvailability, mintTestTokens, type MintableToken } from "./lib/testTokenFaucet";
 import { balanceStatusText, readUnderlyingBalance, type BalanceReadStatus } from "./lib/underlyingBalance";
 import { decryptHandle, encryptUint64, publicDecryptHandle, readContracts, type ReadContracts, waitForTransaction } from "./lib/veilpoolClient";
-import { canOfferRecovery, canOfferResume, canResumeWithBalance, hasConfidentialBalance, requiredWrapAmount, UNWRAP_PROGRESS_STEPS, unwrapProgressCopy, unwrapProgressStep, unwrapSuccessCopy, wrapperBalancePresentation, wrapperStateSessionKey, type UnwrapProgressStatus } from "./lib/depositRecovery";
+import { canOfferRecovery, canOfferResume, canResumeWithBalance, createWalletSessionGuard, hasConfidentialBalance, requiredWrapAmount, sameWalletSession, UNWRAP_PROGRESS_STEPS, unwrapProgressCopy, unwrapProgressStep, unwrapSuccessCopy, wrapperBalancePresentation, wrapperStateSessionKey, type UnwrapProgressStatus, type WalletSessionGuard, type WalletSessionToken } from "./lib/depositRecovery";
 import { depositEmptyStateMessage, depositParticipationCopy, formatRoundCountdown, roundMonitorView, type RoundMonitorView } from "./lib/roundMonitor";
 import { displayErrorMessage, useWallet, type WalletState } from "./wallet";
 
@@ -85,6 +85,11 @@ type RecoveryState = {
   amount?: bigint;
   waitingForWallet?: boolean;
   error?: string;
+};
+
+type InFlightRefresh = {
+  session: WalletSessionToken;
+  promise: Promise<{ balanceLoaded: boolean }>;
 };
 
 const EMPTY_PUBLIC_STATE: PublicState = {
@@ -304,8 +309,14 @@ export default function UserApp() {
   const [wrappedBalance, setWrappedBalance] = useState<WrappedBalanceState>({ status: "idle" });
   const [recovery, setRecovery] = useState<RecoveryState>({ status: "idle" });
   const [partialDepositUnits, setPartialDepositUnits] = useState<bigint>();
-  const refreshInFlightRef = useRef<Promise<{ balanceLoaded: boolean }> | null>(null);
+  const refreshInFlightRef = useRef<InFlightRefresh | null>(null);
   const operationInFlightRef = useRef(false);
+  const wrappedHandleRef = useRef<string | undefined>(undefined);
+  const walletSessionKey = wrapperStateSessionKey(wallet.status, wallet.address, wallet.walletId);
+  const sessionGuardRef = useRef<WalletSessionGuard | undefined>(undefined);
+  if (!sessionGuardRef.current) sessionGuardRef.current = createWalletSessionGuard(walletSessionKey);
+  sessionGuardRef.current.update(walletSessionKey);
+  const sessionGuard = sessionGuardRef.current;
 
   const addToast = useCallback((message: string) => {
     setToasts((current) => [...current.slice(-2), message]);
@@ -314,39 +325,50 @@ export default function UserApp() {
 
   const refresh = useCallback((force = false): Promise<{ balanceLoaded: boolean }> => {
     if (!wallet.provider || wallet.status !== "connected" || !contracts || !wallet.address) return Promise.resolve({ balanceLoaded: false });
+    const session = sessionGuard.capture();
     const previous = refreshInFlightRef.current;
-    if (previous && !force) return previous;
+    if (previous && sameWalletSession(previous.session, session) && !force) return previous.promise;
+    if (previous && !sameWalletSession(previous.session, session)) refreshInFlightRef.current = null;
     const request = (async () => {
-      if (previous && force) await previous;
+      if (!sessionGuard.isCurrent(session)) return { balanceLoaded: false };
+      if (previous && sameWalletSession(previous.session, session) && force) {
+        await previous.promise;
+        if (!sessionGuard.isCurrent(session)) return { balanceLoaded: false };
+      }
       setLoading(true);
       setBalanceStatus("loading");
       setBalanceError(undefined);
       try {
         const underlying = await readConfiguredUnderlyingBalance(contracts, wallet.address!);
+        if (!sessionGuard.isCurrent(session)) return { balanceLoaded: false };
         setState((current) => ({ ...current, underlyingBalance: underlying.value, underlyingDecimals: underlying.decimals }));
         setBalanceStatus("loaded");
         try {
           const protocol = await loadPublicState(contracts, wallet.address, underlying);
+          if (!sessionGuard.isCurrent(session)) return { balanceLoaded: false };
           setState(protocol);
         } catch (protocolError) {
+          if (!sessionGuard.isCurrent(session)) return { balanceLoaded: false };
           const message = `${operationError("Protocol state refresh", protocolError)} · ${safeErrorDetails(protocolError)}`;
           setError(message);
         }
         return { balanceLoaded: true };
       } catch (loadError) {
+        if (!sessionGuard.isCurrent(session)) return { balanceLoaded: false };
         const message = operationError("Balance refresh", loadError);
         setBalanceStatus("error");
         setBalanceError(message);
         setError(message);
         return { balanceLoaded: false };
       } finally {
-        setLoading(false);
+        if (sessionGuard.isCurrent(session)) setLoading(false);
       }
     })();
-    refreshInFlightRef.current = request;
-    request.then(() => { if (refreshInFlightRef.current === request) refreshInFlightRef.current = null; }, () => { if (refreshInFlightRef.current === request) refreshInFlightRef.current = null; });
+    const entry = { session, promise: request };
+    refreshInFlightRef.current = entry;
+    request.then(() => { if (refreshInFlightRef.current === entry) refreshInFlightRef.current = null; }, () => { if (refreshInFlightRef.current === entry) refreshInFlightRef.current = null; });
     return request;
-  }, [contracts, wallet.address, wallet.provider, wallet.status]);
+  }, [contracts, sessionGuard, wallet.address, wallet.provider, wallet.status]);
 
   useEffect(() => {
     if (!wallet.provider || wallet.status !== "connected" || !wallet.address) {
@@ -360,9 +382,11 @@ export default function UserApp() {
 
   const wrapperSessionRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    const sessionKey = wrapperStateSessionKey(wallet.status, wallet.address, wallet.walletId);
-    if (wrapperSessionRef.current === sessionKey) return;
-    wrapperSessionRef.current = sessionKey;
+    if (wrapperSessionRef.current === walletSessionKey) return;
+    wrapperSessionRef.current = walletSessionKey;
+    refreshInFlightRef.current = null;
+    wrappedHandleRef.current = undefined;
+    operationInFlightRef.current = false;
     setState(EMPTY_PUBLIC_STATE);
     setBalanceStatus("idle");
     setBalanceError(undefined);
@@ -376,7 +400,7 @@ export default function UserApp() {
     setFaucetStatus("idle");
     setFaucetError(undefined);
     setFaucetTxHash(undefined);
-  }, [wallet.address, wallet.status, wallet.walletId]);
+  }, [wallet.address, wallet.status, wallet.walletId, walletSessionKey]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -388,8 +412,9 @@ export default function UserApp() {
     return () => window.clearInterval(interval);
   }, []);
 
-  const wrappedHandleRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const session = sessionGuard.capture();
+    if (!sessionGuard.isCurrent(session)) return;
     const handle = state.wrappedBalanceHandle;
     if (wrappedHandleRef.current === handle) return;
     wrappedHandleRef.current = handle;
@@ -430,13 +455,17 @@ export default function UserApp() {
     if (!canTransact || !wallet.ethereum || !wallet.signer || !wallet.address) return;
     const handle = kind === "savings" ? state.savingsHandle : state.winningsHandle;
     if (!handle || !contractConfig.veilPool) return;
+    const session = sessionGuard.capture();
+    if (!sessionGuard.isCurrent(session)) return;
     setReveals((current) => ({ ...current, [kind]: { status: "requesting" } }));
     setError(undefined);
     try {
       const value = await decryptHandle(wallet.ethereum, wallet.signer, handle, contractConfig.veilPool, wallet.address);
+      if (!sessionGuard.isCurrent(session)) return;
       setReveals((current) => ({ ...current, [kind]: { status: "revealed", value: typeof value === "boolean" ? undefined : value } }));
       addToast(`${kind === "savings" ? "Savings" : "Winnings"} revealed only to this wallet.`);
     } catch (revealError) {
+      if (!sessionGuard.isCurrent(session)) return;
       setReveals((current) => ({ ...current, [kind]: { status: "failed" } }));
       setError(`${operationError(`${kind === "savings" ? "Savings" : "Winnings"} reveal`, revealError)} · ${safeErrorDetails(revealError)}`);
     }
@@ -455,14 +484,18 @@ export default function UserApp() {
       setFaucetError("The configured test token is unavailable in this environment.");
       return;
     }
+    const session = sessionGuard.capture();
+    if (!sessionGuard.isCurrent(session)) return;
     try {
       setFaucetStatus("minting");
       setFaucetError(undefined);
       const token = contracts.underlying.connect(wallet.signer) as unknown as MintableToken;
       const hash = await mintTestTokens(token, wallet.address);
+      if (!sessionGuard.isCurrent(session)) return;
       setFaucetTxHash(hash);
       setFaucetStatus("balance-refreshing");
       const refreshed = await refresh(true);
+      if (!sessionGuard.isCurrent(session)) return;
       if (!refreshed.balanceLoaded) {
         setFaucetStatus("balance-read-failed");
         setFaucetError("Mint confirmed, but the balance read failed. Retry the balance refresh.");
@@ -471,6 +504,7 @@ export default function UserApp() {
       setFaucetStatus("balance-loaded");
       addToast("100 mUNDER received. Balance loaded from Sepolia.");
     } catch (mintError) {
+      if (!sessionGuard.isCurrent(session)) return;
       setFaucetStatus("failure");
       setFaucetError(`${operationError("Test token mint", mintError)} · ${safeErrorDetails(mintError)}`);
     }
@@ -478,7 +512,9 @@ export default function UserApp() {
 
   const retryBalance = async () => {
     if (balanceStatus === "loading") return;
+    const session = sessionGuard.capture();
     const refreshed = await refresh(true);
+    if (!sessionGuard.isCurrent(session)) return;
     if (refreshed.balanceLoaded) {
       setFaucetStatus("balance-loaded");
       setFaucetError(undefined);
@@ -490,52 +526,68 @@ export default function UserApp() {
 
   const revealWrappedBalance = async () => {
     if (!canTransact || !wallet.ethereum || !wallet.signer || !wallet.address || !contractConfig.confidentialToken || !state.wrappedBalanceHandle || !hasConfidentialBalance(state.wrappedBalanceHandle)) return;
+    const session = sessionGuard.capture();
+    if (!sessionGuard.isCurrent(session)) return;
     setWrappedBalance({ status: "requesting" });
     try {
       const value = await decryptHandle(wallet.ethereum, wallet.signer, state.wrappedBalanceHandle, contractConfig.confidentialToken, wallet.address);
+      if (!sessionGuard.isCurrent(session)) return;
       if (typeof value !== "bigint") throw new Error("Confidential wrapper balance returned an unsupported value.");
       setWrappedBalance({ status: "revealed", value });
     } catch (revealError) {
+      if (!sessionGuard.isCurrent(session)) return;
       setWrappedBalance({ status: "failed", error: `${operationError("Confidential balance review", revealError)} · ${safeErrorDetails(revealError)}` });
     }
   };
 
-  const finalizeRecovery = async (requestId: string) => {
+  const finalizeRecovery = async (requestId: string, expectedSession = sessionGuard.capture()) => {
     if (!canTransact || !wallet.ethereum || !wallet.signer || !wallet.address || !contracts || !contractConfig.confidentialToken) return;
+    const session = expectedSession;
+    if (!sessionGuard.isCurrent(session)) return;
     try {
       setRecovery((current) => ({ ...current, status: "decrypting", step: 3, requestId, waitingForWallet: false, error: undefined }));
       const publicDecryption = await publicDecryptHandle(wallet.ethereum, requestId);
+      if (!sessionGuard.isCurrent(session)) return;
       const amount = publicDecryption.value;
       if (typeof amount !== "bigint") throw new Error("The wrapper recovery proof did not return an integer amount.");
       setRecovery((current) => ({ ...current, status: "preparing-finalization", step: 4, requestId, waitingForWallet: false, error: undefined, amount }));
       await yieldToUi();
+      if (!sessionGuard.isCurrent(session)) return;
       setRecovery((current) => ({ ...current, status: "finalizing", step: 5, requestId, waitingForWallet: true }));
       const finalize = await (contracts.token.connect(wallet.signer) as ReadContracts["token"]).finalizeUnwrap(requestId, amount, publicDecryption.decryptionProof);
+      if (!sessionGuard.isCurrent(session)) return;
       setRecovery((current) => ({ ...current, status: "finalizing-confirmation", step: 6, requestId, txHash: finalize.hash, waitingForWallet: false }));
       const hash = await waitForTransaction(finalize);
+      if (!sessionGuard.isCurrent(session)) return;
       setRecovery((current) => ({ ...current, status: "complete", step: UNWRAP_PROGRESS_STEPS.length, txHash: hash, waitingForWallet: false }));
       setWrappedBalance({ status: "revealed", value: 0n });
       setPartialDepositUnits(undefined);
       await refresh(true);
     } catch (recoveryError) {
+      if (!sessionGuard.isCurrent(session)) return;
       setRecovery((current) => ({ ...current, status: "failed", requestId, error: `${operationError("Recovery finalization", recoveryError)} · ${safeErrorDetails(recoveryError)}` }));
     }
   };
 
   const recoverWrappedBalance = async () => {
     if (recovery.status !== "idle" && recovery.status !== "complete" && recovery.status !== "failed") return;
+    const session = sessionGuard.capture();
+    if (!sessionGuard.isCurrent(session)) return;
     if (recovery.status === "failed" && recovery.requestId) {
-      await finalizeRecovery(recovery.requestId);
+      await finalizeRecovery(recovery.requestId, session);
       return;
     }
     if (!canTransact || !wallet.signer || !wallet.address || !contracts || !state.wrappedBalanceHandle || !hasConfidentialBalance(state.wrappedBalanceHandle)) return;
     try {
       setRecovery({ status: "preparing", step: 0, waitingForWallet: false });
       await yieldToUi();
+      if (!sessionGuard.isCurrent(session)) return;
       setRecovery({ status: "requesting", step: 1, waitingForWallet: true });
       const unwrap = await (contracts.token.connect(wallet.signer) as ReadContracts["token"])["unwrap(address,address,bytes32)"](wallet.address, wallet.address, state.wrappedBalanceHandle);
+      if (!sessionGuard.isCurrent(session)) return;
       setRecovery({ status: "confirming", step: 2, txHash: unwrap.hash, waitingForWallet: false });
       const receipt = await unwrap.wait();
+      if (!sessionGuard.isCurrent(session)) return;
       if (!receipt) throw new Error("The unwrap request receipt was not returned.");
       const logs = receipt.logs as Array<{ topics: readonly string[]; data: string }>;
       const requestLog = logs.map((log) => {
@@ -543,8 +595,9 @@ export default function UserApp() {
       }).find((parsed: any) => parsed?.name === "UnwrapRequested");
       const requestId = requestLog?.args?.unwrapRequestId as string | undefined;
       if (!requestId) throw new Error("The unwrap request was confirmed, but no request identifier was found.");
-      await finalizeRecovery(requestId);
+      await finalizeRecovery(requestId, session);
     } catch (recoveryError) {
+      if (!sessionGuard.isCurrent(session)) return;
       setRecovery((current) => ({ ...current, status: "failed", waitingForWallet: false, error: `${operationError("Confidential balance recovery", recoveryError)} · ${safeErrorDetails(recoveryError)}` }));
     }
   };
@@ -556,6 +609,8 @@ export default function UserApp() {
     const validation = validateAmount(amount, undefined, state.underlyingDecimals);
     if (validation) { setError(validation); return; }
     const units = parseUnits(amount, state.underlyingDecimals);
+    const session = sessionGuard.capture();
+    if (!sessionGuard.isCurrent(session)) return;
     operationInFlightRef.current = true;
     let depositStage = "private deposit";
     let wrappedStepConfirmed = false;
@@ -563,12 +618,15 @@ export default function UserApp() {
       setError(undefined);
       setOperation({ kind: "deposit", step: 0, label: "Preparing deposit…", waitingForWallet: false });
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      if (!sessionGuard.isCurrent(session)) return;
       setOperation({ kind: "deposit", step: 0, label: "Checking confidential balance", waitingForWallet: false });
       const wrappedHandle = String(await contracts.token.confidentialBalanceOf(wallet.address));
+      if (!sessionGuard.isCurrent(session)) return;
       let wrappedAmount = 0n;
       if (hasConfidentialBalance(wrappedHandle)) {
         depositStage = "confidential balance authorization";
         const revealed = await decryptHandle(wallet.ethereum, wallet.signer, wrappedHandle, contractConfig.confidentialToken, wallet.address);
+        if (!sessionGuard.isCurrent(session)) return;
         if (typeof revealed !== "bigint") throw new Error("Confidential wrapper balance returned an unsupported value.");
         wrappedAmount = revealed;
         setWrappedBalance({ status: "revealed", value: revealed });
@@ -577,47 +635,60 @@ export default function UserApp() {
       wrappedStepConfirmed = wrappedAmount > 0n;
       if (wrapAmount > 0n) {
         const currentUnderlying = await readConfiguredUnderlyingBalance(contracts, wallet.address);
+        if (!sessionGuard.isCurrent(session)) return;
         setState((current) => ({ ...current, underlyingBalance: currentUnderlying.value, underlyingDecimals: currentUnderlying.decimals }));
         if (wrapAmount > currentUnderlying.value) throw new Error("Your public mUNDER balance does not cover the missing confidential amount.");
         const allowance = safeBigInt(await contracts.underlying.allowance(wallet.address, contractConfig.confidentialToken));
+        if (!sessionGuard.isCurrent(session)) return;
         if (allowance < wrapAmount) {
           setOperation({ kind: "deposit", step: 1, label: "Approving required amount", waitingForWallet: true });
           depositStage = "underlying approval";
           const approval = await (contracts.underlying.connect(wallet.signer) as ReadContracts["underlying"]).approve(contractConfig.confidentialToken, wrapAmount);
+          if (!sessionGuard.isCurrent(session)) return;
           setOperation({ kind: "deposit", step: 1, label: "Approval submitted", waitingForWallet: false, txHash: approval.hash });
           await approval.wait();
+          if (!sessionGuard.isCurrent(session)) return;
         }
         setOperation({ kind: "deposit", step: 2, label: `Wrapping ${trimUnits(wrapAmount, state.underlyingDecimals)} mUNDER`, waitingForWallet: true });
         depositStage = "confidential wrap";
         const wrap = await (contracts.token.connect(wallet.signer) as ReadContracts["token"]).wrap(wallet.address, wrapAmount);
+        if (!sessionGuard.isCurrent(session)) return;
         setOperation({ kind: "deposit", step: 2, label: "Confidential wrap confirmed", waitingForWallet: false, txHash: wrap.hash });
         wrappedStepConfirmed = true;
         await wrap.wait();
+        if (!sessionGuard.isCurrent(session)) return;
       }
       const isOperator = await contracts.token.isOperator(wallet.address, contractConfig.veilPool);
+      if (!sessionGuard.isCurrent(session)) return;
       if (!isOperator) {
         setOperation({ kind: "deposit", step: 3, label: "Authorizing VeilPool", waitingForWallet: true });
         const expiry = BigInt(Math.floor(Date.now() / 1000) + OPERATOR_EXPIRY_DAYS * 24 * 60 * 60);
         depositStage = "VeilPool authorization";
         const authorization = await (contracts.token.connect(wallet.signer) as ReadContracts["token"]).setOperator(contractConfig.veilPool, expiry);
+        if (!sessionGuard.isCurrent(session)) return;
         setOperation({ kind: "deposit", step: 3, label: "VeilPool authorization submitted", waitingForWallet: false, txHash: authorization.hash });
         await authorization.wait();
+        if (!sessionGuard.isCurrent(session)) return;
       }
       setOperation({ kind: "deposit", step: 4, label: "Preparing encrypted deposit", waitingForWallet: false });
       depositStage = "encrypted input generation";
       const binding = depositInputBinding(contractConfig.confidentialToken, contractConfig.veilPool);
       const encrypted = await encryptUint64(wallet.ethereum, binding.contractAddress, binding.userAddress, units);
+      if (!sessionGuard.isCurrent(session)) return;
       setOperation({ kind: "deposit", step: 5, label: "Submitting deposit", waitingForWallet: true });
       depositStage = "VeilPool deposit";
       const deposit = await (contracts.vault.connect(wallet.signer) as ReadContracts["vault"]).deposit(encrypted.handle, encrypted.inputProof);
+      if (!sessionGuard.isCurrent(session)) return;
       setOperation({ kind: "deposit", step: 6, label: "Waiting for confirmation", waitingForWallet: false, txHash: deposit.hash });
       const hash = await waitForTransaction(deposit);
+      if (!sessionGuard.isCurrent(session)) return;
       setOperation({ kind: "deposit", step: 7, label: "complete", waitingForWallet: false, txHash: hash });
       setPartialDepositUnits(undefined);
       setReveals({ savings: { status: "idle" }, winnings: { status: "idle" } });
       addToast("Deposit confirmed.");
       await refresh(true);
     } catch (depositError) {
+      if (!sessionGuard.isCurrent(session)) return;
       const message = `${operationError(depositStage, depositError)} · ${safeErrorDetails(depositError)}`;
       if (wrappedStepConfirmed) {
         setPartialDepositUnits(units);
@@ -629,7 +700,7 @@ export default function UserApp() {
         setError(message);
       }
     } finally {
-      operationInFlightRef.current = false;
+      if (sessionGuard.isCurrent(session)) operationInFlightRef.current = false;
     }
   };
 
@@ -639,27 +710,34 @@ export default function UserApp() {
     const validation = validateAmount(amount, savings.value, state.underlyingDecimals);
     if (validation) { setError(validation); return; }
     const units = parseUnits(amount, state.underlyingDecimals);
+    const session = sessionGuard.capture();
+    if (!sessionGuard.isCurrent(session)) return;
     operationInFlightRef.current = true;
     try {
       setError(undefined);
       setOperation({ kind: "withdraw", step: 0, label: "Preparing withdrawal…", waitingForWallet: false });
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      if (!sessionGuard.isCurrent(session)) return;
       setOperation({ kind: "withdraw", step: 0, label: "Preparing withdrawal", waitingForWallet: false });
       const encrypted = await encryptUint64(wallet.ethereum, contractConfig.veilPool, wallet.address, units);
+      if (!sessionGuard.isCurrent(session)) return;
       setOperation({ kind: "withdraw", step: 1, label: "Submitting withdrawal", waitingForWallet: true });
       const withdrawal = await (contracts.vault.connect(wallet.signer) as ReadContracts["vault"]).withdraw(encrypted.handle, encrypted.inputProof);
+      if (!sessionGuard.isCurrent(session)) return;
       setOperation({ kind: "withdraw", step: 3, label: "Waiting for confirmation", waitingForWallet: false, txHash: withdrawal.hash });
       const hash = await waitForTransaction(withdrawal);
+      if (!sessionGuard.isCurrent(session)) return;
       setReveals((current) => ({ ...current, savings: { status: "idle" } }));
       setOperation({ kind: "withdraw", step: 4, label: "complete", waitingForWallet: false, txHash: hash });
       addToast("Confidential withdrawal confirmed.");
       await refresh(true);
     } catch (withdrawError) {
+      if (!sessionGuard.isCurrent(session)) return;
       const message = `${operationError("Private withdrawal", withdrawError)} · ${safeErrorDetails(withdrawError)}`;
       setOperation((current) => ({ ...(current ?? { kind: "withdraw", step: 0, label: "failed", waitingForWallet: false }), label: "failed", waitingForWallet: false, error: message }));
       setError(message);
     } finally {
-      operationInFlightRef.current = false;
+      if (sessionGuard.isCurrent(session)) operationInFlightRef.current = false;
     }
   };
 
