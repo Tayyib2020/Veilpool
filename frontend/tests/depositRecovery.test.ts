@@ -6,7 +6,7 @@ import {
   canResumeWithBalance,
   checkpointAfterPrerequisites,
   createWalletSessionGuard,
-  hasConfidentialBalance,
+  hasConfidentialHandle,
   requiredWrapAmount,
   sameWalletSession,
   UNWRAP_PROGRESS_STEPS,
@@ -27,9 +27,9 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-test("detects an existing confidential wrapper balance without revealing it", () => {
-  assert.equal(hasConfidentialBalance(`0x${"0".repeat(64)}`), false);
-  assert.equal(hasConfidentialBalance(`0x${"1".padStart(64, "0")}`), true);
+test("detects an opaque confidential handle without claiming the amount is positive", () => {
+  assert.equal(hasConfidentialHandle(`0x${"0".repeat(64)}`), false);
+  assert.equal(hasConfidentialHandle(`0x${"1".padStart(64, "0")}`), true);
 });
 
 test("failed post-wrap deposit retries without submitting another wrap", () => {
@@ -51,9 +51,15 @@ test("reuses confirmed approval and operator authorization checkpoints", () => {
 
 test("keeps an unknown wrapper amount behind an authorized review", () => {
   assert.deepEqual(wrapperBalancePresentation("idle", undefined), {
-    title: "A confidential wrapper balance is present.",
-    detail: "The amount stays private until you authorize a view.",
+    title: "Confidential balance available to review.",
+    detail: "Authorize a private view to check whether any unused confidential balance remains.",
   });
+});
+
+test("does not classify an encrypted-zero handle as a positive wrapper balance", () => {
+  assert.notEqual(wrapperBalancePresentation("idle", undefined).title, "A confidential wrapper balance is present.");
+  assert.equal(canOfferRecovery("idle", undefined), false);
+  assert.equal(canOfferResume("idle", 10n, undefined), false);
 });
 
 test("offers recovery only for a currently authorized positive wrapper balance", () => {
@@ -69,6 +75,16 @@ test("resolves an authorized zero wrapper balance without recovery actions", () 
     detail: "Your confidential wrapper currently holds 0 mUNDER.",
   });
   assert.match(wrapperBalancePresentation("revealed", 10n).detail, /Unwrap it to return public Sepolia mUNDER\./);
+});
+
+test("preserves the authorized zero presentation when a ciphertext handle is refreshed", () => {
+  const refreshedHandle = `0x${"2".padStart(64, "0")}`;
+  assert.equal(hasConfidentialHandle(refreshedHandle), true);
+  assert.deepEqual(wrapperBalancePresentation("revealed", 0n), {
+    title: "No unused confidential balance.",
+    detail: "Your confidential wrapper currently holds 0 mUNDER.",
+  });
+  assert.equal(canOfferRecovery("revealed", 0n), false);
 });
 
 test("clears wrapper recovery capability when the revealed value is absent", () => {

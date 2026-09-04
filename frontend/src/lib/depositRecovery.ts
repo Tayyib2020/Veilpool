@@ -2,7 +2,7 @@ import { formatUnits } from "ethers";
 
 export const ZERO_CONFIDENTIAL_HANDLE = `0x${"0".repeat(64)}`;
 
-export function hasConfidentialBalance(handle?: string): boolean {
+export function hasConfidentialHandle(handle?: string): boolean {
   if (!handle) return false;
   try {
     return BigInt(handle) !== 0n;
@@ -142,9 +142,9 @@ export function wrapperBalancePresentation(status: "idle" | "requesting" | "reve
   }
   if (status === "revealed" && value !== undefined) {
     const amount = formatUnits(value, decimals).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
-    return { title: `${amount} mUNDER is safely held in your confidential balance.`, detail: "The amount is available only to this authorized wallet. Unwrap it to return public Sepolia mUNDER." };
+    return { title: "A confidential wrapper balance is available.", detail: `${amount} mUNDER is safely held in your confidential balance. Unwrap it to return public Sepolia mUNDER.` };
   }
-  return { title: "A confidential wrapper balance is present.", detail: "The amount stays private until you authorize a view." };
+  return { title: "Confidential balance available to review.", detail: "Authorize a private view to check whether any unused confidential balance remains." };
 }
 
 export function canOfferResume(status: "idle" | "requesting" | "revealed" | "failed", requested: bigint | undefined, value: bigint | undefined): boolean {

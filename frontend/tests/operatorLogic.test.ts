@@ -23,6 +23,12 @@ test("exposes only valid open and draw actions for the current lifecycle", () =>
   assert.deepEqual(availableOperatorActions({ state: "OPEN", participantCount: 2n, unallocatedHarvestedYield: 4n, prizeCommitted: false, acceptanceDecryptionRequested: false, adapterConfigured: true, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), ["request_principal_deployment", "harvest_yield", "lock_round"]);
 });
 
+test("keeps the next-round action available from settled or cancelled core state", () => {
+  const base = { participantCount: 3n, unallocatedHarvestedYield: 0n, prizeCommitted: true, acceptanceDecryptionRequested: false, adapterConfigured: true, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n };
+  assert.deepEqual(availableOperatorActions({ ...base, state: "SETTLED" }), ["start_next_round"]);
+  assert.deepEqual(availableOperatorActions({ ...base, state: "CANCELLED" }), ["start_next_round"]);
+});
+
 test("maps retry-required and encrypted acceptance states without exposing winner controls", () => {
   assert.deepEqual(availableOperatorActions({ state: "RETRY_REQUIRED", participantCount: 2n, publicTotalWeight: 3n, unallocatedHarvestedYield: 0n, prizeCommitted: true, acceptanceDecryptionRequested: false, adapterConfigured: false, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), ["execute_draw"]);
   assert.deepEqual(availableOperatorActions({ state: "DRAWING", participantCount: 2n, unallocatedHarvestedYield: 0n, prizeCommitted: true, acceptanceDecryptionRequested: true, adapterConfigured: false, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), ["finalize_draw_acceptance"]);
@@ -30,6 +36,10 @@ test("maps retry-required and encrypted acceptance states without exposing winne
 
 test("operator writes use the connected wallet signer while reads stay provider-backed", () => {
   const source = readFileSync(new URL("../src/OperatorPanel.tsx", import.meta.url), "utf8");
+  assert.match(source, /async function loadOperatorCoreState/);
+  assert.match(source, /async function loadOperatorHealthState/);
+  assert.ok(source.indexOf("setState(coreState)") < source.indexOf("const healthState = await loadOperatorHealthState"));
+  assert.match(source, /Some protocol health metrics are temporarily unavailable\./);
   assert.match(source, /const readEngine = contracts\.engine/);
   assert.match(source, /const writeEngine = contracts\.engine\.connect\(wallet\.signer\)/);
   assert.equal([...source.matchAll(/tx = await contracts\.engine\./g)].length, 0);

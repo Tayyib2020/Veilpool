@@ -27,7 +27,7 @@ import { depositInputBinding } from "./lib/fheInputBinding";
 import { canStartFaucetMint, faucetAvailability, mintTestTokens, type MintableToken } from "./lib/testTokenFaucet";
 import { balanceStatusText, readUnderlyingBalance, type BalanceReadStatus } from "./lib/underlyingBalance";
 import { decryptHandle, encryptUint64, publicDecryptHandle, readContracts, type ReadContracts, waitForTransaction } from "./lib/veilpoolClient";
-import { canOfferRecovery, canOfferResume, canResumeWithBalance, createWalletSessionGuard, hasConfidentialBalance, requiredWrapAmount, sameWalletSession, UNWRAP_PROGRESS_STEPS, unwrapProgressCopy, unwrapProgressStep, unwrapSuccessCopy, wrapperBalancePresentation, wrapperStateSessionKey, type UnwrapProgressStatus, type WalletSessionGuard, type WalletSessionToken } from "./lib/depositRecovery";
+import { canOfferRecovery, canOfferResume, canResumeWithBalance, createWalletSessionGuard, hasConfidentialHandle, requiredWrapAmount, sameWalletSession, UNWRAP_PROGRESS_STEPS, unwrapProgressCopy, unwrapProgressStep, unwrapSuccessCopy, wrapperBalancePresentation, wrapperStateSessionKey, type UnwrapProgressStatus, type WalletSessionGuard, type WalletSessionToken } from "./lib/depositRecovery";
 import { depositEmptyStateMessage, depositParticipationCopy, formatRoundClockCountdown, roundMonitorView, type RoundMonitorView, usePublicRoundSchedule } from "./lib/roundMonitor";
 import { useCurrentRoundDepositEvidence } from "./lib/roundParticipants";
 import { displayErrorMessage, useWallet, type WalletState } from "./wallet";
@@ -236,7 +236,8 @@ function WrappedBalanceNotice({
 }) {
   const recoveryActive = recovery.status !== "idle" && recovery.status !== "complete" && !(recovery.status === "failed" && !recovery.requestId);
   const recoveryComplete = recovery.status === "complete";
-  if (!hasConfidentialBalance(handle) && !recoveryComplete) return null;
+  const authorizedZero = status === "revealed" && value === 0n;
+  if (!hasConfidentialHandle(handle) && !recoveryComplete && !authorizedZero) return null;
   const presentation = recoveryComplete ? unwrapSuccessCopy(recovery.amount, decimals) : wrapperBalancePresentation(status, value, decimals);
   const canResume = canOfferResume(status, requestedUnits, value);
   const canRecover = canOfferRecovery(status, value);
@@ -426,10 +427,16 @@ export default function UserApp() {
     if (wrappedHandleRef.current === handle) return;
     wrappedHandleRef.current = handle;
     if (recovery.status === "complete") return;
+    const authorizedZero = wrappedBalance.status === "revealed" && wrappedBalance.value === 0n;
+    if (authorizedZero) {
+      setRecovery({ status: "idle" });
+      setPartialDepositUnits(undefined);
+      return;
+    }
     setWrappedBalance({ status: "idle" });
     setRecovery({ status: "idle" });
-    if (!hasConfidentialBalance(handle)) setPartialDepositUnits(undefined);
-  }, [recovery.status, state.wrappedBalanceHandle]);
+    if (!hasConfidentialHandle(handle)) setPartialDepositUnits(undefined);
+  }, [recovery.status, state.wrappedBalanceHandle, wrappedBalance.status, wrappedBalance.value]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape" && !operation) setModal(null); };
@@ -536,7 +543,7 @@ export default function UserApp() {
   };
 
   const revealWrappedBalance = async () => {
-    if (!canTransact || !wallet.ethereum || !wallet.signer || !wallet.address || !contractConfig.confidentialToken || !state.wrappedBalanceHandle || !hasConfidentialBalance(state.wrappedBalanceHandle)) return;
+    if (!canTransact || !wallet.ethereum || !wallet.signer || !wallet.address || !contractConfig.confidentialToken || !state.wrappedBalanceHandle || !hasConfidentialHandle(state.wrappedBalanceHandle)) return;
     const session = sessionGuard.capture();
     if (!sessionGuard.isCurrent(session)) return;
     setWrappedBalance({ status: "requesting" });
@@ -588,7 +595,7 @@ export default function UserApp() {
       await finalizeRecovery(recovery.requestId, session);
       return;
     }
-    if (!canTransact || !wallet.signer || !wallet.address || !contracts || !state.wrappedBalanceHandle || !hasConfidentialBalance(state.wrappedBalanceHandle)) return;
+    if (!canTransact || !wallet.signer || !wallet.address || !contracts || !state.wrappedBalanceHandle || !hasConfidentialHandle(state.wrappedBalanceHandle)) return;
     try {
       setRecovery({ status: "preparing", step: 0, waitingForWallet: false });
       await yieldToUi();
@@ -634,7 +641,7 @@ export default function UserApp() {
       const wrappedHandle = String(await contracts.token.confidentialBalanceOf(wallet.address));
       if (!sessionGuard.isCurrent(session)) return;
       let wrappedAmount = 0n;
-      if (hasConfidentialBalance(wrappedHandle)) {
+      if (hasConfidentialHandle(wrappedHandle)) {
         depositStage = "confidential balance authorization";
         const revealed = await decryptHandle(wallet.ethereum, wallet.signer, wrappedHandle, contractConfig.confidentialToken, wallet.address);
         if (!sessionGuard.isCurrent(session)) return;

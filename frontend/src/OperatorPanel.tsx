@@ -49,6 +49,7 @@ type OperatorPublicState = {
   principalDeployed: bigint;
   managedAssets: bigint;
   generatedYield: bigint;
+  healthAvailable: boolean;
   tokenDecimals: number;
 };
 
@@ -71,6 +72,7 @@ const EMPTY_STATE: OperatorPublicState = {
   principalDeployed: 0n,
   managedAssets: 0n,
   generatedYield: 0n,
+  healthAvailable: false,
   tokenDecimals: 6,
 };
 
@@ -118,7 +120,7 @@ function publicAmount(value: bigint | undefined, decimals: number): string {
   return `${formatUnits(value, decimals)} vPOOL`;
 }
 
-async function loadOperatorState(contracts: ReadContracts, provider: BrowserProvider): Promise<OperatorPublicState> {
+async function loadOperatorCoreState(contracts: ReadContracts): Promise<OperatorPublicState> {
   const [participantCount, maxParticipants, tokenDecimals] = await Promise.all([
     contracts.vault.participantCount(),
     contracts.vault.maxParticipants(),
@@ -160,21 +162,28 @@ async function loadOperatorState(contracts: ReadContracts, provider: BrowserProv
   state.pendingPrincipalUnwrapRequest = String(pendingPrincipalUnwrapRequest);
   state.publicPrincipalLiability = safeBigInt(publicPrincipalLiability);
   state.adapterAddress = String(adapterAddress);
-
-  const effectiveAdapterAddress = state.adapterAddress !== ZERO_ADDRESS ? state.adapterAddress : contractConfig.yieldAdapter;
-  if (effectiveAdapterAddress) {
-    state.adapterAddress = effectiveAdapterAddress;
-    const adapter = contracts.yieldAdapter ?? yieldAdapterContract(provider, effectiveAdapterAddress);
-    const [principalDeployed, managedAssets, generatedYield] = await Promise.all([
-      adapter.principalDeployed(),
-      adapter.managedAssets(),
-      adapter.generatedYield(),
-    ]);
-    state.principalDeployed = safeBigInt(principalDeployed);
-    state.managedAssets = safeBigInt(managedAssets);
-    state.generatedYield = safeBigInt(generatedYield);
-  }
+  if (state.adapterAddress === ZERO_ADDRESS) state.adapterAddress = contractConfig.yieldAdapter;
   return state;
+}
+
+async function loadOperatorHealthState(
+  contracts: ReadContracts,
+  provider: BrowserProvider,
+  coreState: OperatorPublicState,
+): Promise<Pick<OperatorPublicState, "principalDeployed" | "managedAssets" | "generatedYield" | "healthAvailable">> {
+  if (!coreState.adapterAddress) return { principalDeployed: 0n, managedAssets: 0n, generatedYield: 0n, healthAvailable: false };
+  const adapter = contracts.yieldAdapter ?? yieldAdapterContract(provider, coreState.adapterAddress);
+  const [principalDeployed, managedAssets, generatedYield] = await Promise.all([
+    adapter.principalDeployed(),
+    adapter.managedAssets(),
+    adapter.generatedYield(),
+  ]);
+  return {
+    principalDeployed: safeBigInt(principalDeployed),
+    managedAssets: safeBigInt(managedAssets),
+    generatedYield: safeBigInt(generatedYield),
+    healthAvailable: true,
+  };
 }
 
 function NetworkStatus({ wallet, onSwitch }: { wallet: WalletState; onSwitch: () => void }) {
@@ -221,6 +230,7 @@ export default function OperatorPanel() {
   const [state, setState] = useState<OperatorPublicState>(EMPTY_STATE);
   const [loading, setLoading] = useState(false);
   const [refreshError, setRefreshError] = useState<string>();
+  const [healthError, setHealthError] = useState<string>();
   const [operation, setOperation] = useState<OperatorOperation>();
   const [pendingAction, setPendingAction] = useState<OperatorAction>();
   const [yieldAmount, setYieldAmount] = useState("");
@@ -251,8 +261,18 @@ export default function OperatorPanel() {
       setLoading(true);
       try {
         setRefreshError(undefined);
-        setState(await loadOperatorState(contracts, wallet.provider!));
+        const coreState = await loadOperatorCoreState(contracts);
+        setState(coreState);
+        try {
+          const healthState = await loadOperatorHealthState(contracts, wallet.provider!, coreState);
+          setState((current) => ({ ...current, ...healthState }));
+          setHealthError(undefined);
+        } catch (error) {
+          setHealthError(`Some protocol health metrics are temporarily unavailable. ${safeErrorDetails(error)}`);
+        }
       } catch (error) {
+        setState(EMPTY_STATE);
+        setHealthError(undefined);
         setRefreshError(`${operationError("Operator state refresh", error)} · ${safeErrorDetails(error)}`);
       } finally {
         setLoading(false);
@@ -418,12 +438,13 @@ export default function OperatorPanel() {
       {wallet.status === "unsupported" && <div className="operator-alert" role="alert"><WalletCards size={18} /><div><strong>Wallet unavailable</strong><p>Connect a compatible EVM wallet that supports EIP-1193 to use the operator panel.</p></div></div>}
       {wallet.status === "error" && wallet.error && <div className="operator-alert" role="alert"><CircleAlert size={18} /><div><strong>Wallet error</strong><p>{wallet.error}</p></div></div>}
       {refreshError && <div className="operator-alert" role="alert"><CircleAlert size={18} /><div><strong>Protocol state unavailable</strong><p>{refreshError}</p></div><button aria-label="Dismiss error" onClick={() => setRefreshError(undefined)}><X size={16} /></button></div>}
+      {healthError && <div className="operator-alert" role="status"><CircleAlert size={18} /><div><strong>Some protocol health metrics are temporarily unavailable.</strong><p>{healthError.replace("Some protocol health metrics are temporarily unavailable. ", "")}</p></div><button aria-label="Dismiss health warning" onClick={() => setHealthError(undefined)}><X size={16} /></button></div>}
       <AccessState access={access} onConnect={() => void connect()} onSwitch={() => void switchToSepolia().catch(() => undefined)} />
       {access === "authorized" && <>
         <section className="operator-hero dark-media-surface"><motion.img className="operator-hero__image" src={OPERATOR_ASSET} alt="" aria-hidden="true" initial={heroMotion} animate={heroAnimate} transition={{ duration: .9, ease: "easeOut" }} /><div className="operator-hero__veil" aria-hidden="true" /><div className="operator-hero__content"><div><span className="operator-kicker">Authorized operator</span><h1>Protocol control<br /><em>without private access.</em></h1><p>Operate rounds, yield, and settlement without seeing individual savings, eligibility, or winnings.</p></div><div className="operator-assurance"><div><strong><Check size={15} /> Operator can</strong><span>Advance round lifecycle</span><span>Process public protocol state</span><span>Trigger legitimate draw actions</span></div><div><strong><X size={15} /> Operator cannot</strong><span>View individual balances</span><span>View private eligibility</span><span>Choose the winner</span></div></div></div></section>
         <section className="operator-overview"><div className="operator-section-heading"><span className="operator-kicker">Protocol overview</span><h2>Public state,<br /><em>precisely accounted.</em></h2></div><button className="operator-refresh" onClick={() => void refresh()} disabled={loading} aria-label="Refresh operator state"><RefreshCw size={15} className={loading ? "is-spinning" : ""} /> {loading ? "Refreshing" : "Refresh state"}</button><div className="operator-metrics"><div><span>Current round</span><strong>{state.roundId === undefined ? "Unavailable" : `#${state.roundId}`}</strong></div><div><span>Lifecycle status</span><strong>{currentState.replaceAll("_", " ")}</strong></div><div><span>Participants</span><strong>{state.participantCount.toString()} <small>/ {state.maxParticipants.toString()}</small></strong></div><div><span>Aggregate total</span><strong>{state.publicTotalWeight === undefined ? "Encrypted" : state.publicTotalWeight.toString()}</strong></div><div><span>Prize source</span><strong>{state.roundPrizeAmount !== undefined ? publicAmount(state.roundPrizeAmount, state.tokenDecimals) : "Separate yield"}</strong></div><div><span>Principal state</span><strong>{state.principalUnwrapPending ? "Restoring" : state.principalSyncPending ? "Sync requested" : "No pending sync"}</strong></div></div><ScheduleNotice view={roundMonitor} /></section>
         <div className="operator-workbench"><Lifecycle current={currentState} /><section className="operator-actions"><div className="operator-section-heading"><span className="operator-kicker">State-aware controls</span><h2>Advance only<br /><em>valid protocol actions.</em></h2></div>{state.roundState === undefined && <p className="operator-muted">Connect a configured deployment to read available actions.</p>}{state.roundState !== undefined && actions.length === 0 && <p className="operator-muted">No operator action is currently valid for {currentState.replaceAll("_", " ")}.</p>}<div className="operator-action-list">{actions.map((action) => { const title = action === "start_next_round" && state.roundId !== undefined ? `Start Round #${state.roundId + 1n}` : ACTION_COPY[action].title; const emphasized = action === "lock_round" || action === "execute_draw" || (action === "start_next_round" && roundMonitor.scheduleHeading === "ROUND READY"); return <div className="operator-action" key={action}><div><strong>{title}</strong><p>{ACTION_COPY[action].description}</p>{action === "commit_harvested_yield" && <label className="operator-yield-input"><span>Amount to commit</span><input inputMode="decimal" value={yieldAmount} onChange={(event) => setYieldAmount(event.target.value)} placeholder={formatUnits(state.unallocatedHarvestedYield, state.tokenDecimals)} /><small>Available: {formatUnits(state.unallocatedHarvestedYield, state.tokenDecimals)} vPOOL</small></label>}</div><Button variant={emphasized ? "primary" : "secondary"} onClick={() => requestAction(action)} disabled={Boolean(operation && (operation.status === "preparing" || operation.status === "waiting_wallet" || operation.status === "submitted" || operation.status === "confirming")) || (action === "commit_harvested_yield" && !yieldAmount.trim())}>{title} <ArrowUpRight size={15} /></Button></div>; })}</div>{currentState === "RETRY_REQUIRED" && <div className="operator-retry"><strong>Fresh encrypted randomness required.</strong><p>The previous bounded batch produced no accepted candidate. Retry runs a fresh encrypted batch without revealing rejected candidates or a public retry count.</p></div>}{currentState === "DRAW_READY" && state.publicTotalWeight === 0n && <div className="operator-retry"><strong>No eligible balance exists for this round.</strong><p>Close the verified empty round without creating a prize.</p></div>}</section></div>
-        <section className="operator-health"><div className="operator-section-heading"><span className="operator-kicker">Protocol health</span><h2>Separate principal<br /><em>from prize.</em></h2></div><div className="operator-health__grid"><div><span>Principal backing</span><strong>{state.adapterAddress ? `${publicAmount(state.principalDeployed, state.tokenDecimals)} deployed` : "Unavailable"}</strong><small>{state.adapterAddress ? `${publicAmount(state.managedAssets, state.tokenDecimals)} managed in adapter` : "Yield adapter not configured"}</small></div><div><span>Generated yield</span><strong>{state.adapterAddress ? publicAmount(state.generatedYield, state.tokenDecimals) : "Unavailable"}</strong><small>Only surplus may become a prize source.</small></div><div><span>Yield source</span><strong>Controlled Sepolia simulation</strong><small>Test assets only; not external DeFi yield.</small></div><div><span>Yield adapter</span><strong>{state.adapterAddress ? "Configured" : "Unavailable"}</strong><small>Controller and asset checks remain on-chain.</small></div><div><span>Participant limit</span><strong>{state.participantCount <= state.maxParticipants ? "Healthy" : "Action required"}</strong><small>{state.participantCount.toString()} of {state.maxParticipants.toString()} registered.</small></div></div><div className="operator-invariant"><span>Accounting invariant</span><strong>PRINCIPAL <em>≠</em> PRIZE</strong></div></section>
+        <section className="operator-health"><div className="operator-section-heading"><span className="operator-kicker">Protocol health</span><h2>Separate principal<br /><em>from prize.</em></h2></div><div className="operator-health__grid"><div><span>Principal backing</span><strong>{state.adapterAddress && state.healthAvailable ? `${publicAmount(state.principalDeployed, state.tokenDecimals)} deployed` : "Unavailable"}</strong><small>{state.adapterAddress && state.healthAvailable ? `${publicAmount(state.managedAssets, state.tokenDecimals)} managed in adapter` : "Some protocol health metrics are temporarily unavailable."}</small></div><div><span>Generated yield</span><strong>{state.adapterAddress && state.healthAvailable ? publicAmount(state.generatedYield, state.tokenDecimals) : "Unavailable"}</strong><small>Only surplus may become a prize source.</small></div><div><span>Yield source</span><strong>Controlled Sepolia simulation</strong><small>Test assets only; not external DeFi yield.</small></div><div><span>Yield adapter</span><strong>{state.adapterAddress ? "Configured" : "Unavailable"}</strong><small>Controller and asset checks remain on-chain.</small></div><div><span>Participant limit</span><strong>{state.participantCount <= state.maxParticipants ? "Healthy" : "Action required"}</strong><small>{state.participantCount.toString()} of {state.maxParticipants.toString()} registered.</small></div></div><div className="operator-invariant"><span>Accounting invariant</span><strong>PRINCIPAL <em>≠</em> PRIZE</strong></div></section>
         <PrivacyBoundary />
       </>}
     </main>
