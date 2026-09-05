@@ -106,4 +106,8 @@ test("describes private winnings withdrawal as upcoming without implying an avai
     title: "Prize withdrawal coming soon",
     body: "Direct withdrawal of private winnings is planned for an upcoming VeilPool release in the next few weeks. Your winnings remain recorded privately onchain.",
   });
+  const userAppSource = readFileSync(new URL("../src/UserApp.tsx", import.meta.url), "utf8");
+  assert.match(userAppSource, /prizeWithdrawalComingSoonNotice\.title/);
+  assert.match(userAppSource, /prizeWithdrawalComingSoonNotice\.body/);
+  assert.doesNotMatch(userAppSource, /Withdraw winnings|Add winnings to savings/);
 });

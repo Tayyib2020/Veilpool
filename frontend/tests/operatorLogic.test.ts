@@ -19,7 +19,7 @@ test("maps wallet state to authorized, unauthorized, disconnected, and configura
 });
 
 test("exposes only valid open and draw actions for the current lifecycle", () => {
-  assert.deepEqual(availableOperatorActions({ state: "OPEN", participantCount: 1n, unallocatedHarvestedYield: 0n, prizeCommitted: false, acceptanceDecryptionRequested: false, adapterConfigured: false, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), []);
+  assert.deepEqual(availableOperatorActions({ state: "OPEN", participantCount: 1n, unallocatedHarvestedYield: 0n, prizeCommitted: false, acceptanceDecryptionRequested: false, adapterConfigured: true, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), ["request_principal_deployment", "harvest_yield"]);
   assert.deepEqual(availableOperatorActions({ state: "OPEN", participantCount: 2n, unallocatedHarvestedYield: 4n, prizeCommitted: false, acceptanceDecryptionRequested: false, adapterConfigured: true, principalSyncPending: false, principalUnwrapPending: false, principalDeployed: 0n }), ["request_principal_deployment", "harvest_yield", "lock_round"]);
 });
 
@@ -45,6 +45,9 @@ test("operator writes use the connected wallet signer while reads stay provider-
   assert.equal([...source.matchAll(/tx = await contracts\.engine\./g)].length, 0);
   assert.match(source, /start_next_round/);
   assert.match(source, /`Start Round #\$\{state\.roundId \+ 1n\}`/);
+  assert.match(source, /action === "lock_round" && state\.roundId !== undefined \? `Lock Round #\$\{state\.roundId\}`/);
+  assert.doesNotMatch(source, /\.filter\(\(action\) => action !== "lock_round" \|\| thresholdReached\)/);
+  assert.match(source, /Deposit window complete\. Lock the round to freeze encrypted eligibility\./);
 });
 
 test("keeps lifecycle ordering stable for the public state timeline", () => {
