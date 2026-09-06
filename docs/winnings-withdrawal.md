@@ -21,7 +21,13 @@ fresh reveal. No optimistic plaintext balance subtraction is performed.
 
 ## Deployment implications
 
-The existing Sepolia VeilPool is not upgradeable and cannot acquire this API.
+The canonical isolated deployment now supports this API and completed live
+winnings withdrawal and optional public unwrap. See
+[canonical evidence](canonical-sepolia.md). The following explains why historical
+V1 required replacement; it is not an instruction to redeploy again. The new
+canonical stack uses a dedicated yield vault to isolate controlled donations.
+
+The historical V1 Sepolia VeilPool is not upgradeable and cannot acquire this API.
 A new VeilPool is required. PrizeEngine's vault reference is immutable, so it
 also requires a new deployment. The yield adapter's controller is set once to
 the engine, so a new adapter is required for that new engine. The underlying

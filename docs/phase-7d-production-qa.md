@@ -1,5 +1,10 @@
 # Phase 7D production frontend deployment and reviewer QA
 
+> Historical V1 deployment/QA snapshot, not a claim about current remote settings.
+> The canonical target is now the isolated stack: see
+> [public build configuration](canonical-sepolia.md). Vercel changes require
+> separate approval; the old addresses below are retained as historical evidence.
+
 Date: 2026-09-03
 
 ## Status

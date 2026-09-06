@@ -1,5 +1,8 @@
 # VeilPool Sepolia deployment runbook
 
+> Historical/deprecated V1 runbook. Do not execute these commands for the
+> canonical isolated deployment. See [current configuration](canonical-sepolia.md).
+
 Phase 7A prepares the deployment machinery but does not deploy contracts.
 Never place private keys, mnemonics, RPC credentials, or decrypted
 confidential values in this document or in the deployment artifact.

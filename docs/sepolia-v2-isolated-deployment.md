@@ -1,5 +1,10 @@
 # Isolated Sepolia deployment preparation
 
+> Update: deployment is complete and is now canonical. The authoritative record
+> is `deployments/sepolia-v2-isolated.json`; see [current E2E and configuration](canonical-sepolia.md).
+> Preserve Round 1 SETTLED. The preparation-time status, commands and recovery
+> analysis below are historical notes, not authorization to rerun deployment.
+
 Status: **prepared locally, not deployed**. No live preflight, deployment,
 compensation, migration or yield injection was executed during this preparation.
 V1 and current V2, their records, Solidity, and frontend configuration are unchanged.

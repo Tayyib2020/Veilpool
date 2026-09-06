@@ -26,7 +26,11 @@ contract interfaces change; no partial ABI fragments are maintained by hand.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in the deployed Sepolia addresses:
+Copy `.env.example` to ignored `.env.local`. The example contains the canonical
+isolated addresses from `deployments/sepolia-v2-isolated.json`; use those exact
+public values for a future approved Vercel build. See
+[canonical configuration](../docs/canonical-sepolia.md). The following names are
+the configuration schema (the example file supplies the actual addresses):
 
 ```bash
 VITE_CHAIN_ID=11155111
@@ -149,7 +153,7 @@ The privacy boundary is explicit: the operator can operate round state and
 public aggregates, but cannot inspect per-user financial state or choose the
 winner. Missing Sepolia deployment configuration renders a reviewable state
 without fabricated protocol data. The current deployed Sepolia addresses are
-recorded in the repository root README and `deployments/sepolia.json`.
+recorded in the repository root README and `deployments/sepolia-v2-isolated.json`.
 
 The operator health panel labels the yield source as “Controlled Sepolia
 simulation”. It uses test assets only, not external DeFi yield or real-money
@@ -167,13 +171,18 @@ same accessibility and reduced-motion behavior.
 ## Known limitations and Phase 7
 
 - Sepolia round transitions are operator-triggered rather than timer-driven.
-- The frontend weekly schedule is informational only.
+- The frontend two-hour funded countdown is informational only.
 - The participant cap is 10 cumulatively across this Sepolia deployment.
 - The global participant registry is not reset per round; each next-round lock
   snapshots the current live registry.
 - The Sepolia yield source is a controlled test-asset simulation, not real
   lending yield or real-money returns.
-- Winnings withdrawal and adding winnings back to savings are not implemented.
+- Winnings withdrawal is supported by the canonical isolated VeilPool and its
+  generated ABI. After an authorized positive winnings reveal, the user can
+  withdraw winnings to their confidential wrapper without reducing savings or
+  eligibility, then optionally unwrap to public test mUNDER. Confirmation is
+  required before refreshing; reveal the updated winnings privately afterward.
+- Adding winnings back to savings is not implemented.
 - WalletConnect/mobile QR support is not implemented.
 - A user withdrawal is a confidential vault withdrawal. The current Phase 5
   principal-restoration boundary remains operator-controlled and asynchronous.

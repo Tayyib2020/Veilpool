@@ -1,5 +1,10 @@
 # Sepolia V2 deployment preparation — winnings withdrawal
 
+> Historical/deprecated shared-vault V2 preparation notes. It was subsequently
+> deployed, but is not the canonical target. Preserve its evidence/positions.
+> See [canonical isolated deployment](canonical-sepolia.md). Status below is the
+> original preparation-time status, not an instruction to deploy again.
+
 Status: **prepared, not deployed**. Approval is required before running the
 deployment command. No production frontend configuration is changed by this
 script. `deployments/sepolia.json` remains the authoritative historical V1 record.

@@ -1,5 +1,9 @@
 # Phase 7C Sepolia E2E evidence
 
+> Historical V1 evidence, preserved unchanged below. V1 is deprecated as a
+> canonical frontend target. See [isolated canonical E2E](canonical-sepolia.md)
+> for the current deployment and successful confidential winnings withdrawal.
+
 ## Principal deployment and controlled-yield checkpoint
 
 This record covers the complete validated production lifecycle for Round 1:
