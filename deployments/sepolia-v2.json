@@ -1,0 +1,80 @@
+{
+  "version": 2,
+  "status": "complete",
+  "network": "sepolia",
+  "chainId": 11155111,
+  "operator": "0x51133dfa694940Fe4ebC785a5CE11B54f5C86048",
+  "deployer": "0x51133dfa694940Fe4ebC785a5CE11B54f5C86048",
+  "historicalRecord": "deployments/sepolia.json",
+  "yieldSource": "Controlled Sepolia simulation / Test assets only",
+  "testAssetsOnly": true,
+  "migration": "none",
+  "activeStep": "complete",
+  "transactions": {
+    "veilPool": {
+      "hash": "0xa7e808ca0a8a9d2b75a50447eaf0764adf8167b672f6040ad3e0eb369cfb7ede",
+      "nonce": 69,
+      "block": 11646785,
+      "gasUsed": "1710016"
+    },
+    "yieldAdapter": {
+      "hash": "0xdc696f7e19280c5eae5bfe3a726e2229227fcc5d74b5ee352928d8ac1e507044",
+      "nonce": 70,
+      "block": 11646786,
+      "gasUsed": "551329"
+    },
+    "prizeEngine": {
+      "hash": "0x992abf747b7ae80bb88ee254f5ca14642dc67a2860c7158e4c4f2983af5b98f7",
+      "nonce": 71,
+      "block": 11646788,
+      "gasUsed": "3434096"
+    },
+    "setPrizeEngine": {
+      "hash": "0xa75683a7b31a5785b6247c5cdfc0e355c9b9cc0346146a4957831edf7849651c",
+      "nonce": 72,
+      "block": 11646789,
+      "gasUsed": "44138"
+    },
+    "setAdapterController": {
+      "hash": "0x27b44bc52ad3e29282472c6f5d05e045f0fc74aaa6156948609fc707f73d2d1d",
+      "nonce": 73,
+      "block": 11646791,
+      "gasUsed": "44164"
+    },
+    "setYieldAdapter": {
+      "hash": "0x17a73539cda42155c702f57c5c9a952067c992a9584bc50981af14796f6bc8a4",
+      "nonce": 74,
+      "block": 11646793,
+      "gasUsed": "53476"
+    }
+  },
+  "verified": true,
+  "timestamp": "2026-09-06T10:50:10.197Z",
+  "contracts": {
+    "underlyingToken": {
+      "address": "0x60FAC1d70af4e4b6f7eF973787bddd37763508bc",
+      "reused": true
+    },
+    "confidentialToken": {
+      "address": "0xfbC3096644cc41bAa6768897c0de286F79D1578a",
+      "reused": true
+    },
+    "sepoliaYieldVault": {
+      "address": "0xecF8Abb70E79aF0E9428388b66F8498b474040b1",
+      "reused": true
+    },
+    "veilPool": {
+      "address": "0xbA7a505DFd707e28eBb96c9Dc302710D3E85C281",
+      "reused": false
+    },
+    "yieldAdapter": {
+      "address": "0x94CeA363Ac57f93fc1FBBd04608A00e5557dF3f3",
+      "reused": false
+    },
+    "prizeEngine": {
+      "address": "0xf013348c35e0A14DFAce51e6D82B0b64679bdD6E",
+      "reused": false
+    }
+  },
+  "historicalRecordHash": "0x310d89a8f9ed01b04b06a824eff19c6c875b03de8b13949ba6a93fb7b0e3c45d"
+}
