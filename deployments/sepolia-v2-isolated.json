@@ -1,0 +1,156 @@
+{
+  "version": "2-isolated",
+  "status": "complete",
+  "verified": true,
+  "network": "sepolia",
+  "chainId": 11155111,
+  "operator": "0x51133dfa694940Fe4ebC785a5CE11B54f5C86048",
+  "deployer": "0x51133dfa694940Fe4ebC785a5CE11B54f5C86048",
+  "migration": "none",
+  "yieldSource": "Controlled Sepolia simulation / Test assets only — dedicated yield vault",
+  "testAssetsOnly": true,
+  "timestamp": "2026-09-06T11:53:15.145Z",
+  "historicalRecords": {
+    "deployments/sepolia.json": "0x310d89a8f9ed01b04b06a824eff19c6c875b03de8b13949ba6a93fb7b0e3c45d",
+    "deployments/sepolia-v2.json": "0x5d67ab6692d840983dda6ff2861de650b5a533c552dcf832dceba1d3ec7d3c05"
+  },
+  "activeStep": "complete",
+  "transactions": {
+    "sepoliaYieldVault": {
+      "nonce": 83,
+      "hash": "0x67a7c56ec220d6902682ba17fd00979a534977faccc622da7186947b4bc774c3",
+      "block": 11647090,
+      "gasUsed": "1254222"
+    },
+    "veilPool": {
+      "nonce": 84,
+      "hash": "0xe81bdb2512ebed5d564a27be1004e9e072daf7ce3fb5f0b529b0d45fd9220774",
+      "block": 11647092,
+      "gasUsed": "1710016"
+    },
+    "yieldAdapter": {
+      "nonce": 85,
+      "hash": "0xe7340ef1a7ca35b508c58de6d8000ab52d8b613e583793bbc0f74b43369d2531",
+      "block": 11647093,
+      "gasUsed": "551329"
+    },
+    "prizeEngine": {
+      "nonce": 86,
+      "hash": "0xe55d474eb6505b60829bde5338cd37780260e8d10608ba31a54e48de77b6a1de",
+      "block": 11647094,
+      "gasUsed": "3434096"
+    },
+    "setPrizeEngine": {
+      "nonce": 87,
+      "hash": "0x6aadbdffd2db24013b8050e678f9c5dfaebe249af08883bb94b8fc3458d82d6a",
+      "block": 11647096,
+      "gasUsed": "44138"
+    },
+    "setAdapterController": {
+      "nonce": 88,
+      "hash": "0xea13dbc1a4d47035cf152ecbe29a64232f82cebe9311667d69c105debf1c82fa",
+      "block": 11647098,
+      "gasUsed": "44164"
+    },
+    "setYieldAdapter": {
+      "nonce": 89,
+      "hash": "0x96a2fc7d0812697dba666cdeda448c55b0210eb280f03a789ee3cdfb0fc5380d",
+      "block": 11647099,
+      "gasUsed": "53488"
+    }
+  },
+  "contracts": {
+    "underlyingToken": {
+      "address": "0x60FAC1d70af4e4b6f7eF973787bddd37763508bc",
+      "reused": true
+    },
+    "confidentialToken": {
+      "address": "0xfbC3096644cc41bAa6768897c0de286F79D1578a",
+      "reused": true
+    },
+    "sepoliaYieldVault": {
+      "address": "0xa072afCe9da7Bc93d398AE0985Bc64cFCf3B70F1",
+      "reused": false
+    },
+    "veilPool": {
+      "address": "0x139C2fe98FcE4E2D178d04127bf357C7e04FBEc6",
+      "reused": false
+    },
+    "yieldAdapter": {
+      "address": "0x8Af52321c4B4cb4A9937FE7c3cD32fe452521A13",
+      "reused": false
+    },
+    "prizeEngine": {
+      "address": "0xfD9ED0c82b0Cb98741a21fc7fb1f39b898A1b008",
+      "reused": false
+    }
+  },
+  "legacyBefore": {
+    "v1.principalDeployed": "275000000",
+    "v1.managedAssets": "275000002",
+    "v1.generatedYield": "2",
+    "v1.roundId": "3",
+    "v1.roundState": "6",
+    "v1.publicPrincipalLiability": "275000000",
+    "v1.unallocatedHarvestedYield": "99999",
+    "v1.roundPrizeAmount": "11900000",
+    "v1.prizeCommitted": "true",
+    "v1.principalUnwrapPending": "false",
+    "v1.principalLiabilityRevealRequested": "false",
+    "v1.acceptanceDecryptionRequested": "false",
+    "v1.participantCount": "4",
+    "v1.shares": "131750871",
+    "v1.vaultAssets": "365000002",
+    "v1.vaultSupply": "174869337",
+    "v2.principalDeployed": "90000000",
+    "v2.managedAssets": "89999998",
+    "v2.generatedYield": "0",
+    "v2.roundId": "1",
+    "v2.roundState": "0",
+    "v2.publicPrincipalLiability": "90000000",
+    "v2.unallocatedHarvestedYield": "0",
+    "v2.roundPrizeAmount": "0",
+    "v2.prizeCommitted": "false",
+    "v2.principalUnwrapPending": "false",
+    "v2.principalLiabilityRevealRequested": "false",
+    "v2.acceptanceDecryptionRequested": "false",
+    "v2.participantCount": "2",
+    "v2.shares": "43118466",
+    "v2.vaultAssets": "365000002",
+    "v2.vaultSupply": "174869337"
+  },
+  "legacyAfter": {
+    "v1.principalDeployed": "275000000",
+    "v1.managedAssets": "275000002",
+    "v1.generatedYield": "2",
+    "v1.roundId": "3",
+    "v1.roundState": "6",
+    "v1.publicPrincipalLiability": "275000000",
+    "v1.unallocatedHarvestedYield": "99999",
+    "v1.roundPrizeAmount": "11900000",
+    "v1.prizeCommitted": "true",
+    "v1.principalUnwrapPending": "false",
+    "v1.principalLiabilityRevealRequested": "false",
+    "v1.acceptanceDecryptionRequested": "false",
+    "v1.participantCount": "4",
+    "v1.shares": "131750871",
+    "v1.vaultAssets": "365000002",
+    "v1.vaultSupply": "174869337",
+    "v2.principalDeployed": "90000000",
+    "v2.managedAssets": "89999998",
+    "v2.generatedYield": "0",
+    "v2.roundId": "1",
+    "v2.roundState": "0",
+    "v2.publicPrincipalLiability": "90000000",
+    "v2.unallocatedHarvestedYield": "0",
+    "v2.roundPrizeAmount": "0",
+    "v2.prizeCommitted": "false",
+    "v2.principalUnwrapPending": "false",
+    "v2.principalLiabilityRevealRequested": "false",
+    "v2.acceptanceDecryptionRequested": "false",
+    "v2.participantCount": "2",
+    "v2.shares": "43118466",
+    "v2.vaultAssets": "365000002",
+    "v2.vaultSupply": "174869337"
+  }
+}
