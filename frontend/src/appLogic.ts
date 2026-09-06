@@ -24,9 +24,10 @@ export const prizeWithdrawalComingSoonNotice = {
   body: "Direct withdrawal of private winnings is planned for an upcoming VeilPool release in the next few weeks. Your winnings remain recorded privately onchain.",
 } as const;
 
-export type PrivateOperationKind = "deposit" | "withdraw";
+export type PrivateOperationKind = "deposit" | "withdraw" | "winnings";
 
 export function operationCopy(kind: PrivateOperationKind): { initialAction: string; preparingAction: string; successAction: string; successStatus: string } {
+  if (kind === "winnings") return { initialAction: "Withdraw winnings", preparingAction: "Preparing winnings withdrawal…", successAction: "Withdraw winnings again", successStatus: "Winnings withdrawal complete" };
   if (kind === "deposit") {
     return { initialAction: "Deposit privately", preparingAction: "Preparing deposit…", successAction: "Deposit again", successStatus: "Deposit complete" };
   }

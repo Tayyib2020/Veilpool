@@ -204,6 +204,49 @@ async function prepareTwoParticipantRound(fixture: Fixture) {
   return finalized.publicTotal.value;
 }
 
+describe("Confidential winnings withdrawals after settlement", function () {
+  for (const requests of [[4n], [10n], [99n], [4n, 99n, 99n]]) {
+    it(`clamps winnings claims ${requests.join(',')} while preserving principal, eligibility and ACL`, async function () {
+      const f = await deployFixture();
+      await prepareTwoParticipantRound(f);
+      await executeDraw(f);
+      expect((await finalizeAcceptance(f)).accepted).to.equal(true);
+      const winner = (await decryptVaultValue(f.vault, f.signers.alice, "confidentialWinningsOf")) === PRIZE ? f.signers.alice : f.signers.bob;
+      const loser = winner === f.signers.alice ? f.signers.bob : f.signers.alice;
+      const balance = await f.vault.confidentialBalanceOf(winner.address);
+      const eligibility = await f.vault.confidentialEligibilityOf(winner.address);
+      const liability = await f.vault.confidentialPrincipalLiability();
+      let claimed = 0n;
+      for (const amount of requests) {
+        const input = await fhevm.createEncryptedInput(await f.vault.getAddress(), winner.address).add64(amount).encrypt();
+        const receipt = await (await f.vault.connect(winner).withdrawWinnings(input.handles[0], input.inputProof)).wait();
+        claimed += amount < PRIZE - claimed ? amount : PRIZE - claimed;
+        expect(await decryptVaultValue(f.vault, winner, "confidentialWinningsOf")).to.equal(PRIZE - claimed);
+        expect(await fhevm.userDecryptEuint(FhevmType.euint64, await f.wrapper.confidentialBalanceOf(winner.address), await f.wrapper.getAddress(), winner)).to.equal(claimed);
+        expect(await f.vault.confidentialBalanceOf(winner.address)).to.equal(balance);
+        expect(await f.vault.confidentialEligibilityOf(winner.address)).to.equal(eligibility);
+        expect(await f.vault.confidentialPrincipalLiability()).to.equal(liability);
+        await expectPublicDecryptFailure(await f.vault.confidentialWinningsOf(winner.address));
+        let denied = false;
+        try { await fhevm.userDecryptEuint(FhevmType.euint64, await f.vault.confidentialWinningsOf(winner.address), await f.vault.getAddress(), loser); } catch { denied = true; }
+        expect(denied).to.equal(true);
+        const logs = receipt!.logs.filter(log => log.address.toLowerCase() === (f.vault.target as string).toLowerCase());
+        expect(logs.length).to.equal(1);
+        expect(f.vault.interface.parseLog(logs[0])!.name).to.equal("WithdrawalRecorded");
+      }
+      // A losing participant can submit the same action, but cannot take the winner's funds.
+      const zeroClaim = await fhevm.createEncryptedInput(await f.vault.getAddress(), loser.address).add64(99n).encrypt();
+      await (await f.vault.connect(loser).withdrawWinnings(zeroClaim.handles[0], zeroClaim.inputProof)).wait();
+      expect(await decryptVaultValue(f.vault, loser, "confidentialWinningsOf")).to.equal(0n);
+      expect(await fhevm.userDecryptEuint(FhevmType.euint64, await f.wrapper.confidentialBalanceOf(loser.address), await f.wrapper.getAddress(), loser)).to.equal(0n);
+      expect(await decryptVaultValue(f.vault, winner, "confidentialWinningsOf")).to.equal(PRIZE - claimed);
+      // Savings withdrawal remains independent of prize claiming.
+      await withdrawFor(f.vault, winner, 1n);
+      expect(await decryptVaultValue(f.vault, winner, "confidentialWinningsOf")).to.equal(PRIZE - claimed);
+    });
+  }
+});
+
 async function decryptVaultValue(vault: VeilPool, user: HardhatEthersSigner, getter: string) {
   const handle = await (vault as any)[getter](user.address);
   return fhevm.userDecryptEuint(FhevmType.euint64, handle, await vault.getAddress(), user);

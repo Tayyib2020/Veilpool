@@ -32,10 +32,10 @@ import { depositEmptyStateMessage, depositParticipationCopy, formatRoundClockCou
 import { useCurrentRoundDepositEvidence } from "./lib/roundParticipants";
 import { displayErrorMessage, useWallet, type WalletState } from "./wallet";
 
-type ModalKind = "deposit" | "withdraw" | null;
+type ModalKind = "deposit" | "withdraw" | "winnings" | null;
 type RevealKind = "savings" | "winnings";
 type RevealStatus = "idle" | "requesting" | "decrypting" | "revealed" | "failed";
-type OperationKind = "deposit" | "withdraw";
+type OperationKind = "deposit" | "withdraw" | "winnings";
 
 const DASHBOARD_ASSETS = {
   user: "/images/dashboard-user.png",
@@ -43,6 +43,7 @@ const DASHBOARD_ASSETS = {
 } as const;
 
 type PublicState = {
+  winningsWithdrawalSupported?: boolean;
   underlyingBalance: bigint;
   underlyingDecimals: number;
   isParticipant: boolean;
@@ -147,6 +148,8 @@ async function loadPublicState(contracts: ReadContracts, address?: string, under
     principalSyncPending: false,
     principalUnwrapPending: false,
   };
+  try { state.winningsWithdrawalSupported = await contracts.vault.supportsWinningsWithdrawal() === true; }
+  catch { state.winningsWithdrawalSupported = false; }
   if (state.isParticipant) {
     const [savingsHandle, winningsHandle, eligibilityHandle] = await Promise.all([
       contracts.vault.confidentialBalanceOf(address),
@@ -204,9 +207,9 @@ function RevealValue({ kind, status, value, decimals, onReveal, onHide }: { kind
   return <div className="app-private-card__value-row"><div><span className="app-data-label">{label}</span><strong className={hasValue ? "app-private-card__amount app-private-card__amount--revealed" : "app-private-card__amount"}>{hasValue ? `${trimUnits(value, decimals)} mUNDER` : "••••••••"}</strong></div><button className="app-reveal" onClick={hasValue ? onHide : onReveal} disabled={status === "requesting" || status === "decrypting"}>{status === "requesting" ? <VeilPoolLoader variant="inline" statusText="Requesting authorization…" /> : status === "decrypting" ? <VeilPoolLoader variant="inline" statusText="Decrypting…" /> : hasValue ? <><EyeOff size={14} /> Hide</> : <><Eye size={14} /> Reveal</>}</button></div>;
 }
 
-function SettledWinningsResult({ value, decimals, reduced }: { value: bigint; decimals: number; reduced: boolean | null }) {
+function SettledWinningsResult({ value, decimals, reduced, supported }: { value: bigint; decimals: number; reduced: boolean | null; supported?: boolean }) {
   const message = settledWinningsMessage(value, decimals);
-  return <><motion.div className={`app-settled-result app-settled-result--${message.tone}`} role="status" aria-live="polite" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, ease: "easeOut" }}><span className="app-settled-result__mark" aria-hidden="true">{message.tone === "won" ? "✦" : "✓"}</span><div><strong>{message.title}</strong><span>{message.body}</span></div></motion.div><div className="app-winnings-notice" role="note"><strong>{prizeWithdrawalComingSoonNotice.title}</strong><span>{prizeWithdrawalComingSoonNotice.body}</span></div></>;
+  return <><motion.div className={`app-settled-result app-settled-result--${message.tone}`} role="status" aria-live="polite" initial={reduced ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, ease: "easeOut" }}><span className="app-settled-result__mark" aria-hidden="true">{message.tone === "won" ? "✦" : "✓"}</span><div><strong>{message.title}</strong><span>{message.body}</span></div></motion.div>{!supported && <div className="app-winnings-notice" role="note"><strong>{prizeWithdrawalComingSoonNotice.title}</strong><span>{prizeWithdrawalComingSoonNotice.body}</span></div>}</>;
 }
 
 function WrappedBalanceNotice({
@@ -285,7 +288,7 @@ function Modal({ kind, amount, setAmount, state, decimals, available, balanceSta
   const steps = isDeposit ? ["Check confidential balance", "Approve required amount", "Wrap required amount", "Authorize VeilPool", "Prepare encrypted deposit", "Submit deposit", "Wait for confirmation"] : ["Preparing withdrawal", "Encrypting amount", "Submitting withdrawal", "Waiting for confirmation"];
   const activeStep = state ? Math.min(state.step, steps.length - 1) : 0;
   const balanceCopy = balanceStatus === "error" ? `${balanceError || "Balance read failed."} Retry before depositing.` : balanceStatusText(balanceStatus, available, decimals);
-  return <div className="app-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}><section className="app-modal" role="dialog" aria-modal="true" aria-labelledby="app-modal-title"><div className="app-modal__header"><div><span className="app-kicker">Private action</span><h2 id="app-modal-title">{complete ? copy.successStatus : isDeposit ? "Deposit privately" : "Withdraw privately"}</h2></div><button aria-label="Close dialog" onClick={onClose} disabled={busy}><X size={18} /></button></div>{isDeposit ? <p className="app-modal__copy">Convert your public Sepolia test asset into confidential VeilPool savings. Approval, wrapping, authorization, and deposit are shown as separate wallet steps.</p> : <p className="app-modal__copy">This confidential withdrawal returns vPOOL from VeilPool to your wallet. Underlying principal restoration remains a separate protocol-operator process.</p>}{complete && <p className="app-modal__success" role="status">{copy.successStatus}. Your private flow is confirmed.</p>}<label className="app-field"><span>Amount</span><div className="app-field__input"><input autoFocus inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" aria-describedby="amount-help" disabled={busy || complete} /><span>mUNDER</span></div></label>{isDeposit ? <p id="amount-help" className={`app-field-help app-field-help--${balanceStatus}`}>Available test balance: <strong>{balanceCopy}</strong></p> : <p id="amount-help" className="app-field-help">Revealed savings available: <strong>{available === undefined ? "Reveal your savings first" : `${trimUnits(available, decimals)} mUNDER`}</strong></p>}{validation && !complete && <p className="app-validation" role="alert">{validation}</p>}{state && <div className="app-operation"><WithdrawalProgress currentStep={activeStep} steps={steps} label={isDeposit ? "Deposit" : "Withdrawal"} /><p className="app-operation__status">{state.waitingForWallet ? "Waiting for you in your wallet" : complete ? copy.successStatus : state.label}</p>{state.error && <p className="app-validation" role="alert">{state.error}</p>}{state.txHash && <a href={explorerTxUrl(state.txHash)} target="_blank" rel="noreferrer">View on Sepolia Explorer <ExternalLink size={13} /></a>}</div>}<div className="app-modal__actions">{!complete && <Button onClick={onSubmit} className="app-modal__submit" disabled={buttonState.disabled || Boolean(validation) || !amount.trim() || (isDeposit && balanceStatus !== "loaded")} aria-busy={buttonState.loading}>{buttonState.loading && <LoaderCircle className="app-operation-spinner" size={15} aria-hidden="true" />}{buttonState.label}{!buttonState.loading && <ArrowUpRight size={15} />}</Button>}{complete && <Button onClick={onRepeat} className="app-modal__submit">{copy.successAction} <ArrowUpRight size={15} /></Button>}{complete && <Button variant="secondary" onClick={onClose}>Done</Button>}</div></section></div>;
+  return <div className="app-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}><section className="app-modal" role="dialog" aria-modal="true" aria-labelledby="app-modal-title"><div className="app-modal__header"><div><span className="app-kicker">Private action</span><h2 id="app-modal-title">{complete ? copy.successStatus : isDeposit ? "Deposit privately" : kind === "winnings" ? "Withdraw winnings" : "Withdraw savings"}</h2></div><button aria-label="Close dialog" onClick={onClose} disabled={busy}><X size={18} /></button></div>{isDeposit ? <p className="app-modal__copy">Convert your public Sepolia test asset into confidential VeilPool savings. Approval, wrapping, authorization, and deposit are shown as separate wallet steps.</p> : <p className="app-modal__copy">{kind === "winnings" ? "Move private winnings to your confidential wrapper balance. Your savings and eligibility remain unchanged. Unwrapping to public mUNDER is a separate optional action." : "This confidential savings withdrawal returns vPOOL from VeilPool to your wallet. Underlying principal restoration remains a separate protocol-operator process."}</p>}{complete && <p className="app-modal__success" role="status">{copy.successStatus}. Your private flow is confirmed.</p>}<label className="app-field"><span>Amount</span><div className="app-field__input"><input autoFocus inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" aria-describedby="amount-help" disabled={busy || complete} /><span>mUNDER</span></div></label>{isDeposit ? <p id="amount-help" className={`app-field-help app-field-help--${balanceStatus}`}>Available test balance: <strong>{balanceCopy}</strong></p> : <p id="amount-help" className="app-field-help">Revealed {kind === "winnings" ? "winnings" : "savings"} available: <strong>{available === undefined ? "Reveal your balance first" : `${trimUnits(available, decimals)} mUNDER`}</strong></p>}{validation && !complete && <p className="app-validation" role="alert">{validation}</p>}{state && <div className="app-operation"><WithdrawalProgress currentStep={activeStep} steps={steps} label={isDeposit ? "Deposit" : "Withdrawal"} /><p className="app-operation__status">{state.waitingForWallet ? "Waiting for you in your wallet" : complete ? copy.successStatus : state.label}</p>{state.error && <p className="app-validation" role="alert">{state.error}</p>}{state.txHash && <a href={explorerTxUrl(state.txHash)} target="_blank" rel="noreferrer">View on Sepolia Explorer <ExternalLink size={13} /></a>}</div>}<div className="app-modal__actions">{!complete && <Button onClick={onSubmit} className="app-modal__submit" disabled={buttonState.disabled || Boolean(validation) || !amount.trim() || (isDeposit && balanceStatus !== "loaded")} aria-busy={buttonState.loading}>{buttonState.loading && <LoaderCircle className="app-operation-spinner" size={15} aria-hidden="true" />}{buttonState.label}{!buttonState.loading && <ArrowUpRight size={15} />}</Button>}{complete && <Button onClick={onRepeat} className="app-modal__submit">{copy.successAction} <ArrowUpRight size={15} /></Button>}{complete && <Button variant="secondary" onClick={onClose}>Done</Button>}</div></section></div>;
 }
 
 function VerificationPanel({ state }: { state: PublicState }) {
@@ -724,9 +727,13 @@ export default function UserApp() {
   };
 
   const submitWithdraw = async () => {
-    if (!wallet.signer || !wallet.ethereum || !wallet.address || !contracts || !contractConfig.veilPool || savings.value === undefined) return;
+    const claimWinnings = modal === "winnings";
+    const kind = claimWinnings ? "winnings" : "withdraw";
+    const available = claimWinnings ? winnings.value : savings.value;
+    if (claimWinnings && !state.winningsWithdrawalSupported) return;
+    if (!wallet.signer || !wallet.ethereum || !wallet.address || !contracts || !contractConfig.veilPool || available === undefined) return;
     if (!canBeginOperation(operationInFlightRef.current, operation)) return;
-    const validation = validateAmount(amount, savings.value, state.underlyingDecimals);
+    const validation = validateAmount(amount, available, state.underlyingDecimals);
     if (validation) { setError(validation); return; }
     const units = parseUnits(amount, state.underlyingDecimals);
     const session = sessionGuard.capture();
@@ -734,26 +741,27 @@ export default function UserApp() {
     operationInFlightRef.current = true;
     try {
       setError(undefined);
-      setOperation({ kind: "withdraw", step: 0, label: "Preparing withdrawal…", waitingForWallet: false });
+      setOperation({ kind, step: 0, label: "Preparing withdrawal…", waitingForWallet: false });
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       if (!sessionGuard.isCurrent(session)) return;
-      setOperation({ kind: "withdraw", step: 0, label: "Preparing withdrawal", waitingForWallet: false });
+      setOperation({ kind, step: 0, label: "Preparing withdrawal", waitingForWallet: false });
       const encrypted = await encryptUint64(wallet.ethereum, contractConfig.veilPool, wallet.address, units);
       if (!sessionGuard.isCurrent(session)) return;
-      setOperation({ kind: "withdraw", step: 1, label: "Submitting withdrawal", waitingForWallet: true });
-      const withdrawal = await (contracts.vault.connect(wallet.signer) as ReadContracts["vault"]).withdraw(encrypted.handle, encrypted.inputProof);
+      setOperation({ kind, step: 1, label: "Submitting withdrawal", waitingForWallet: true });
+      const withdrawal = await (contracts.vault.connect(wallet.signer) as ReadContracts["vault"])[claimWinnings ? "withdrawWinnings" : "withdraw"](encrypted.handle, encrypted.inputProof);
       if (!sessionGuard.isCurrent(session)) return;
-      setOperation({ kind: "withdraw", step: 3, label: "Waiting for confirmation", waitingForWallet: false, txHash: withdrawal.hash });
+      setOperation({ kind, step: 3, label: "Waiting for confirmation", waitingForWallet: false, txHash: withdrawal.hash });
       const hash = await waitForTransaction(withdrawal);
       if (!sessionGuard.isCurrent(session)) return;
-      setReveals((current) => ({ ...current, savings: { status: "idle" } }));
-      setOperation({ kind: "withdraw", step: 4, label: "complete", waitingForWallet: false, txHash: hash });
-      addToast("Confidential withdrawal confirmed.");
+      setReveals((current) => ({ ...current, [claimWinnings ? "winnings" : "savings"]: { status: "idle" } }));
+      setOperation({ kind, step: 4, label: "complete", waitingForWallet: false, txHash: hash });
+      setWrappedBalance({ status: "idle" });
+      addToast(claimWinnings ? "Winnings withdrawal confirmed. Reveal your updated winnings; the transfer is in your confidential wrapper balance." : "Confidential withdrawal confirmed.");
       await refresh(true);
     } catch (withdrawError) {
       if (!sessionGuard.isCurrent(session)) return;
       const message = `${operationError("Private withdrawal", withdrawError)} · ${safeErrorDetails(withdrawError)}`;
-      setOperation((current) => ({ ...(current ?? { kind: "withdraw", step: 0, label: "failed", waitingForWallet: false }), label: "failed", waitingForWallet: false, error: message }));
+      setOperation((current) => ({ ...(current ?? { kind, step: 0, label: "failed", waitingForWallet: false }), label: "failed", waitingForWallet: false, error: message }));
       setError(message);
     } finally {
       if (sessionGuard.isCurrent(session)) operationInFlightRef.current = false;
@@ -804,7 +812,7 @@ export default function UserApp() {
         </div>
       </section>
       <section className="app-dashboard-grid app-dashboard-grid--secondary">
-        <motion.article className="app-private-card" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .16, duration: .55 }}><div className="app-card-top"><div><span className="app-kicker">Private state</span><h2>Your winnings</h2></div><span className="app-lock-chip"><LockKeyhole size={13} /> Private</span></div>{state.isParticipant ? <RevealValue kind="winnings" status={winnings.status} value={winnings.value} decimals={state.underlyingDecimals} onReveal={() => void reveal("winnings")} onHide={() => setReveals((current) => ({ ...current, winnings: { status: "idle" } }))} /> : <div className="app-empty-private"><strong>No private winnings yet.</strong><span>Winnings stay encrypted until you authorize your own reveal.</span></div>}{shouldShowSettledWinningsMessage(state.roundState, winnings.status, winnings.value) && <SettledWinningsResult value={winnings.value!} decimals={state.underlyingDecimals} reduced={reduced} />}<div className="app-private-card__secondary"><span className="app-data-label">Your eligibility</span><strong>{privateEligibility}</strong><small>{state.isParticipant ? "Used for the confidential round snapshot." : "Join the pool to create encrypted eligibility."}</small></div></motion.article>
+        <motion.article className="app-private-card" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .16, duration: .55 }}><div className="app-card-top"><div><span className="app-kicker">Private state</span><h2>Your winnings</h2></div><span className="app-lock-chip"><LockKeyhole size={13} /> Private</span></div>{state.isParticipant ? <RevealValue kind="winnings" status={winnings.status} value={winnings.value} decimals={state.underlyingDecimals} onReveal={() => void reveal("winnings")} onHide={() => setReveals((current) => ({ ...current, winnings: { status: "idle" } }))} /> : <div className="app-empty-private"><strong>No private winnings yet.</strong><span>Winnings stay encrypted until you authorize your own reveal.</span></div>}{shouldShowSettledWinningsMessage(state.roundState, winnings.status, winnings.value) && <SettledWinningsResult supported={state.winningsWithdrawalSupported} value={winnings.value!} decimals={state.underlyingDecimals} reduced={reduced} />}{winnings.status === "revealed" && winnings.value !== undefined && winnings.value > 0n && state.winningsWithdrawalSupported && <Button variant="secondary" disabled={Boolean(operationInFlightRef.current)} onClick={() => openModal("winnings")}>Withdraw winnings <ArrowUpRight size={15} /></Button>}<div className="app-private-card__secondary"><span className="app-data-label">Your eligibility</span><strong>{privateEligibility}</strong><small>{state.isParticipant ? "Used for the confidential round snapshot." : "Join the pool to create encrypted eligibility."}</small></div></motion.article>
         <motion.article className="app-round-card app-round-card--yield dark-media-surface" initial={reduced ? false : { opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .24, duration: .55 }}><motion.img className="app-round-card__image" src={DASHBOARD_ASSETS.yield} alt="" aria-hidden="true" initial={reduced ? false : { scale: 1.04 }} animate={{ scale: 1 }} transition={{ duration: 1.1, ease: "easeOut" }} /><div className="app-round-card__veil" aria-hidden="true" /><div className="app-card-top"><div><span className="app-kicker">Public protocol state</span><h2>Current round</h2></div><span className="app-round-dot" /></div><div className="app-round-id">{state.roundId === undefined ? "#—" : `#${state.roundId}`}</div><div className="app-round-state"><span>Status</span><strong>{roundMonitor.title}</strong><p>{roundMonitor.supporting}</p></div><div className="app-round-stats"><div><span>Participants</span><strong>{state.participantCount.toString()} <small>/ {state.maxParticipants.toString()}</small></strong></div><div><span>Prize source</span><strong>Generated yield</strong></div></div><RoundMonitor view={roundMonitor} /><VerificationPanel state={state} /></motion.article>
       </section>
       <section className="app-sync-panel"><div><span className="app-kicker">Phase 5 boundary</span><h2>Principal restoration</h2><p>{state.principalUnwrapPending ? "Principal restoration is awaiting protocol processing." : state.principalSyncPending ? "The protocol has requested an authorized principal synchronization." : "Confidential user withdrawals are complete when the vault confirms them. Underlying restoration is coordinated by the protocol operator when required."}</p></div><div className={`app-sync-state${state.principalUnwrapPending || state.principalSyncPending ? " app-sync-state--pending" : ""}`}><span className="app-status-dot" /> {state.principalUnwrapPending || state.principalSyncPending ? "Protocol processing" : "No pending sync reported"}</div></section>
@@ -813,7 +821,7 @@ export default function UserApp() {
     <footer className="app-footer"><VeilPoolLogo compact /><span>VeilPool · Phase 6B user application · no operator controls</span><a href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">Sepolia Explorer <ExternalLink size={12} /></a></footer>
     <Toasts toasts={toasts} />
     {showFundedOverlay && <FundedRoundOverlay view={roundMonitor} reduced={reduced} onDismiss={() => setFundedOverlayRound(state.roundId?.toString())} />}
-    {modal && <Modal kind={modal} amount={amount} setAmount={setAmount} state={operation} decimals={state.underlyingDecimals} available={modal === "deposit" ? (balanceStatus === "loaded" ? state.underlyingBalance : undefined) : savings.value} balanceStatus={modal === "deposit" ? balanceStatus : "loaded"} balanceError={balanceError} onClose={() => { if (!operation || operation.label === "complete" || operation.error) { setModal(null); setOperation(undefined); } }} onSubmit={() => void operationSubmit()} onRepeat={repeatOperation} />}
+    {modal && <Modal kind={modal} amount={amount} setAmount={setAmount} state={operation} decimals={state.underlyingDecimals} available={modal === "deposit" ? (balanceStatus === "loaded" ? state.underlyingBalance : undefined) : modal === "winnings" ? winnings.value : savings.value} balanceStatus={modal === "deposit" ? balanceStatus : "loaded"} balanceError={balanceError} onClose={() => { if (!operation || operation.label === "complete" || operation.error) { setModal(null); setOperation(undefined); } }} onSubmit={() => void operationSubmit()} onRepeat={repeatOperation} />}
     <WalletSelector open={walletSelectionOpen} wallets={walletOptions} onClose={closeWalletSelection} onSelect={(walletId) => void connect(walletId)} />
   </div>;
 }

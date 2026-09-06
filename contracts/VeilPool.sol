@@ -104,6 +104,29 @@ contract VeilPool is ZamaEthereumConfig {
         return address(_confidentialToken);
     }
 
+    /// @notice Capability marker for clients connected to older deployments.
+    function supportsWinningsWithdrawal() external pure returns (bool) {
+        return true;
+    }
+
+    /// @notice Transfers up to the caller's encrypted winnings to their wrapper balance.
+    /// @dev Zero claims follow the same path; no public winner or amount is emitted.
+    function withdrawWinnings(externalEuint64 encryptedAmount, bytes calldata inputProof) external {
+        if (!_registered[msg.sender]) revert NotParticipant();
+        Position storage position = _positions[msg.sender];
+        euint64 requested = FHE.fromExternal(encryptedAmount, inputProof);
+        euint64 permitted = FHE.select(FHE.le(requested, position.winnings), requested, position.winnings);
+        FHE.allowThis(permitted);
+        FHE.allowTransient(permitted, address(_confidentialToken));
+        euint64 transferred = _confidentialToken.confidentialTransfer(msg.sender, permitted);
+        FHE.allowThis(transferred);
+        euint64 remaining = FHE.sub(position.winnings, transferred);
+        FHE.allowThis(remaining);
+        FHE.allow(remaining, msg.sender);
+        position.winnings = remaining;
+        emit WithdrawalRecorded(msg.sender);
+    }
+
     /// @notice Authorizes the production PrizeEngine integration once.
     /// @dev This is configuration, not a decryption or winner-selection role.
     function setPrizeEngine(address prizeEngine_) external {

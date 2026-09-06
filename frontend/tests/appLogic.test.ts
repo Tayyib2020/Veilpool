@@ -109,5 +109,12 @@ test("describes private winnings withdrawal as upcoming without implying an avai
   const userAppSource = readFileSync(new URL("../src/UserApp.tsx", import.meta.url), "utf8");
   assert.match(userAppSource, /prizeWithdrawalComingSoonNotice\.title/);
   assert.match(userAppSource, /prizeWithdrawalComingSoonNotice\.body/);
-  assert.doesNotMatch(userAppSource, /Withdraw winnings|Add winnings to savings/);
+  assert.match(userAppSource, /state.winningsWithdrawalSupported/);
+});
+
+test("winnings withdrawal has distinct loading and completion semantics", () => {
+  assert.equal(operationCopy("winnings").initialAction, "Withdraw winnings");
+  assert.equal(operationButtonState("winnings", { label: "preparing" }).disabled, true);
+  assert.equal(operationCopy("winnings").successStatus, "Winnings withdrawal complete");
+  assert.equal(operationButtonState("winnings", { label: "failed", error: "Rejected" }).disabled, false);
 });
